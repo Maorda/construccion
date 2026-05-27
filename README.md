@@ -1,98 +1,84 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+Plan de Acción y Diseño Definitivo: Google Sheets ODM
+Este plan de acción consolida la arquitectura del Google Sheets ODM integrando el código y servicios avanzados que ya has completado, y detalla la implementación de las piezas faltantes necesarias para lograr un ecosistema 100% operativo, dinámico y robusto en NestJS.
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+🏗️ Estado Actual & Componentes Listos
+Has desarrollado los cimientos más complejos y sofisticados del sistema:
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Decoradores de Metadatos: @Table (con pluralización inteligente), @Column (con listas posicionales de columnas y soporte para borrado lógico y autoincremento), @PrimaryKey (identidad única) y @SubCollection (resolución diferida de relaciones para evitar referencias circulares).
+Constantes del ODM: Symbols para evitar colisiones accidentales de metadatos.
+MetadataRegistry: Servicio NestJS capaz de leer metadatos jerárquicos profundos y mapeos posicionales de columnas.
+GoogleAutenticarService: Servicio asíncrono optimizado con getters perezosos.
+GoogleHealthService: Validador de estabilidad de red con reintentos para asegurar que la hoja esté en línea.
+DatabaseConfigService: Servicio de ciclo de vida (OnModuleInit) que descubre automáticamente todos los repositorios decorados y los inicializa al arrancar la aplicación.
+🛠️ Plan de Implementación de los Componentes Faltantes
+Para que todo el sistema empiece a funcionar de inmediato, implementaremos las siguientes piezas:
 
-## Description
+1. Interfaces de Opciones (src/sheetOdm/interfaces/database.options.interface.ts)
+Definiremos los tipos necesarios para la configuración del módulo NestJS:
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+GoogleDriveConfig: Credenciales de cuenta de servicio de Google.
+DatabaseModuleOptions: Configuración del Spreadsheet, carpeta base, zona horaria y estabilidad de conexión.
+DatabaseModuleAsyncOptions: Opciones dinámicas para inyectar con ConfigService.
+2. Estrategia de Nombres (src/sheetOdm/strategy/naming.strategy.ts)
+Implementar NamingStrategy.formatSheetName(className: string): string que replique la lógica de pluralización predictiva de @Table para que la inicialización por defecto coincida plenamente.
+Implementar NamingStrategy.formatColumnName(propName: string): string (convierte a mayúsculas y limpia caracteres).
+3. El Repositorio Base (src/sheetOdm/repository/sheets.repository.ts)
+Es el corazón de persistencia. Cada repositorio representará una entidad específica y contendrá:
 
-## Project setup
+La propiedad __isSheetsRepository = true (Symbol SHEETS_REPOSITORY_MARKER) para que el DatabaseConfigService lo detecte.
+async initialize(sheetName: string): Promise<void>:
+Obtiene el listado de pestañas del documento a través de GoogleAutenticarService.
+Si la pestaña (ej. OBREROS) no existe: La crea mediante la API de Sheets y escribe los encabezados de las columnas (leídos de MetadataRegistry) en MAYÚSCULAS en la primera fila.
+Si ya existe: Obtiene la primera fila actual, compara con los campos definidos en la clase TypeScript, y si hay columnas nuevas, las añade al final del encabezado (Auto-Migración).
+Operaciones CRUD:
+find(filter?): Descarga los renglones, descarta los eliminados lógicamente (leyendo getDeleteControlProperty), los transforma a instancias de clase mediante el mapa posicional e indexa por nombre de propiedad, aplicando filtros.
+findById(id): Busca la fila cuyo valor en la columna primaria coincida con el ID y la devuelve hidratada.
+create(data):
+Valida con Joi de forma dinámica (generando un esquema a partir de ColumnOptions).
+Genera la PK (uuid o increment según @Column).
+Traduce el objeto a un array plano posicional según getColumnMap y lo inserta en Sheets.
+update(id, data): Localiza la fila, valida el delta con Joi, actualiza la celda correspondiente y refresca la persistencia.
+delete(id): Si se configuró Soft Delete, cambia la columna de control a true. Si no, limpia físicamente el renglón.
+populate(entity, relationField): Carga recursivamente los hijos/relaciones indicados leyendo las opciones de @SubCollection.
+4. Fábrica de Repositorios y Creador de Modelos (SheetsRepositoryFactory & createModel)
+SheetsRepositoryFactory:
+Fábrica inyectable que construye dinámicamente instancias de SheetsRepository<T> para una clase de entidad.
+createModel(Entity, repository):
+Para emular la inyección tipo Mongoose y que puedas inyectar la clase directamente (constructor(private readonly obreroModel: ObreroEntity)), createModel devolverá un Proxy de JavaScript que intercepta las llamadas hacia la clase y las redirige hacia los métodos de su repositorio correspondiente. ¡Esto hace que la inyección sea sumamente limpia, fluida y transparente!
+5. Motores de Consulta (QueryEngine y afines)
+Implementaremos un motor básico e inteligente en src/sheetOdm/engines/query.engine.ts que interprete filtros JSON (ej. { edad: 30, cargo: 'CAPATAZ' }) y soporte comparaciones sencillas para que tus repositorios tengan un motor de consultas funcional desde el día uno.
+📂 Archivos a Crear y Modificar
+Crearemos los archivos ordenados en sus respectivas carpetas bajo src/sheetOdm/:
 
-```bash
-$ npm install
-```
 
-## Compile and run the project
+src/sheetOdm/
+├── constants/
+│   └── metadata.constants.ts               # [NEW] Las constantes Symbols unificadas
+├── decorators/
+│   ├── column.decorator.ts                 # [NEW] Decorador @Column
+│   ├── primarykey.decorator.ts             # [NEW] Decorador @PrimaryKey y Helper
+│   ├── subcollection.decorator.ts          # [NEW] Decorador @SubCollection
+│   └── table.decorator.ts                  # [NEW] Decorador @Table
+├── interfaces/
+│   └── database.options.interface.ts       # [NEW] Interfaces de configuración
+├── strategy/
+│   └── naming.strategy.ts                  # [NEW] Estrategia de nombres y pluralización
+├── services/
+│   ├── auth.google.service.ts              # [NEW] GoogleAutenticarService
+│   ├── google-health.service.ts            # [NEW] GoogleHealthService
+│   ├── database-config.service.ts          # [NEW] DatabaseConfigService
+│   └── metadata-registry.service.ts        # [NEW] MetadataRegistry
+├── repository/
+│   ├── sheets.repository.ts                # [NEW] BaseRepository / SheetsRepository
+│   ├── sheets-repository.factory.ts        # [NEW] SheetsRepositoryFactory
+│   └── create-model.ts                     # [NEW] Creador de Modelos (Proxy Wrapper)
+├── engines/
+│   └── query.engine.ts                     # [NEW] QueryEngine para filtrados de registros
+├── odm-sheet.module.ts                     # [NEW] OdmSheetModule unificado
+└── index.ts                                # [NEW] Exportaciones globales del ODM
+🎯 Plan de Verificación
+Compilación Limpia: Nos aseguraremos de que todo el ODM y sus decoradores compilen perfectamente en TypeScript.
+Levantamiento del Servidor: Integraremos el módulo en AppModule y arrancaremos el servidor para verificar que el DiscoveryService y el DatabaseConfigService descubren e inicializan de forma exitosa los repositorios a través de onModuleInit, realizando las migraciones de pestañas necesarias.
+IMPORTANT
 
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Aprobación Requerida: Este plan unifica tus componentes completados y diseña los faltantes. ¿Me das tu aprobación para comenzar con la creación de los archivos y la codificación de la base para poner todo en marcha?
