@@ -5,6 +5,8 @@ import { QueryEngine } from '@sheetOdm/engines/query.engine';
 import type { DatabaseModuleOptions } from '@sheetOdm/interfaces/database.options.interface';
 import { SheetsRepository, GLOBAL_REPO_REGISTRY } from './sheets.repository';
 import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
+import { RelationManager } from '@sheetOdm/services/relation-manager.service';
+import { DataMapper } from '@sheetOdm/services/data-mapper.service';
 
 @Injectable()
 export class SheetsRepositoryFactory {
@@ -13,7 +15,9 @@ export class SheetsRepositoryFactory {
         private readonly metadataRegistry: MetadataRegistry,
         private readonly queryEngine: QueryEngine,
         @Inject('DATABASE_OPTIONS') private readonly optionsDatabase: DatabaseModuleOptions,
-        private readonly gateway: SheetDataGateway
+        private readonly gateway: SheetDataGateway,
+        private readonly relationManager: RelationManager,
+        private readonly dataMapper: DataMapper,
     ) { }
 
     /**
@@ -26,7 +30,9 @@ export class SheetsRepositoryFactory {
             this.queryEngine,
             this.optionsDatabase,
             this.gateway,
-            entityClass
+            entityClass,
+            this.relationManager,
+            this.dataMapper,
         );
 
         // repo.entityClass = entityClass;

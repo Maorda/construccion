@@ -42,4 +42,14 @@ export class SheetDataGateway {
         const res = await this.auth.sheets.spreadsheets.get({ spreadsheetId: this.spreadsheetId });
         return res.data.sheets?.map(s => s.properties?.title) || [];
     }
+
+    // En SheetDataGateway.ts
+    async getRange(range: string): Promise<any[][]> {
+        const res = await this.auth.sheets.spreadsheets.values.get({
+            spreadsheetId: this.spreadsheetId,
+            range: range,
+            valueInputOption: 'RAW', // O 'USER_ENTERED' según convenga
+        });
+        return res.data.values || [];
+    }
 }

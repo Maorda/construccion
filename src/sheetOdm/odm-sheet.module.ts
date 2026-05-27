@@ -24,6 +24,8 @@ import { createModel } from '@sheetOdm/repository/create-model';
 import { InfrastructureProvisioner } from './services/InfrastructureProvisioner.service';
 import { SheetDataGateway } from './gateway/sheetDataGateway';
 import { SheetsRepository } from './repository/sheets.repository';
+import { RelationManager } from './services/relation-manager.service';
+import { DataMapper } from './services/data-mapper.service';
 
 const CORE_PROVIDERS: Provider[] = [
     GoogleAutenticarService,
@@ -39,7 +41,9 @@ const CORE_PROVIDERS: Provider[] = [
     AggregationEngine,
     ExpressionEngine,
     InfrastructureProvisioner,
-    SheetDataGateway
+    SheetDataGateway,
+    RelationManager,
+    DataMapper,
 ];
 
 @Global()

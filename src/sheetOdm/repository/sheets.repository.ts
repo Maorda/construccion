@@ -9,6 +9,9 @@ import { SHEETS_REPOSITORY_MARKER, SHEETS_TABLE_NAME } from '@sheetOdm/constants
 import { v4 as uuidv4 } from 'uuid';
 import * as Joi from 'joi';
 import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
+import { DataMapper } from '@sheetOdm/services/data-mapper.service';
+import { RelationManager } from '@sheetOdm/services/relation-manager.service';
+import { IdGenerator } from '@sheetOdm/utils/id.generator';
 
 @Injectable()
 export class SheetsRepository<T extends object> {
@@ -26,7 +29,8 @@ export class SheetsRepository<T extends object> {
         @Inject('DATABASE_OPTIONS') protected readonly optionsDatabase: DatabaseModuleOptions,
         protected readonly gateway: SheetDataGateway,
         public readonly entityClass: ClassType<T>,
-
+        protected readonly relationManager: RelationManager,
+        protected readonly dataMapper: DataMapper,
     ) {
 
     }
@@ -188,27 +192,78 @@ export class SheetsRepository<T extends object> {
         return results.length > 0 ? results[0] : null;
     }
 
-    async create1(data: T) {
-        console.log('[DEBUG REPO] Clase recibida:', this.entityClass);
-        console.log('[DEBUG REPO] Nombre de la clase:', this.entityClass?.name);
+    async save1(data: T): Promise<T> {
+        const relationsList = this.metadataRegistry.getRelationsList(this.entityClass);
+        const parentData: any = { ...data };
+        const relationsToSave: Record<string, any[]> = {};
 
-        if (!this.entityClass) {
-            throw new Error('SheetsRepository: entityClass no está definido en el repositorio.');
+        for (const relKey of relationsList) {
+            if (parentData[relKey]) {
+                relationsToSave[relKey] = parentData[relKey];
+                delete parentData[relKey];
+            }
         }
+
+        // Ahora savedParent es de tipo T
+        const savedParent = await this.create1(parentData);
+
+        // Pasamos el padre guardado al RelationManager
+        await this.relationManager.saveChildren(savedParent, relationsToSave, this.entityClass);
+
+        return savedParent; // TypeScript ahora es feliz porque savedParent es T
+    }
+
+
+    async findAll1(): Promise<T[]> {
+        // 1. Obtener datos crudos
+        const rawData = await this.gateway.getRange(`${this.sheetName}!A:Z`);
+
+        // 2. Mapear (DataMapper)
+        const entities = rawData.slice(1).map(row => this.dataMapper.toEntity(row, this.entityClass));
+
+        // 3. Poblar relaciones (RelationManager)
+        return await this.relationManager.populate(entities, this.entityClass);
+    }
+
+    async create1(data: T): Promise<T> {
+        const entity = { ...data };
+        const pkField = this.metadataRegistry.getPrimaryKeyField(this.entityClass);
+
+        // Generación delegada a IdGenerator
+        if (!entity[pkField as keyof T]) {
+            entity[pkField as keyof T] = this.generateId(this.entityClass) as any;
+        }
+
         const sheetName = Reflect.getMetadata(SHEETS_TABLE_NAME, this.entityClass);
         const colMap = this.metadataRegistry.getColumnMap(this.entityClass);
 
-        // Convertimos el objeto { nombre: 'Juan' } a un array [ '', 'Juan', ... ]
-        // basado en los índices posicionales que define tu Metadata
         const row = new Array(Object.keys(colMap).length).fill('');
 
-        for (const [key, value] of Object.entries(data)) {
+        // Mapeo posicional
+        for (const [key, value] of Object.entries(entity)) {
             const index = colMap[key];
             if (index !== undefined) row[index] = value;
         }
 
-        // Llamamos al Gateway para insertar
         await this.gateway.appendRow(sheetName, row);
+
+        return entity; // Retorno de tipo T cumplido
+    }
+
+    private generateId(entityClass: any): string {
+        const details = this.metadataRegistry.getColumnDetails(entityClass);
+        const pkField = this.metadataRegistry.getPrimaryKeyField(entityClass);
+        const options = details[pkField];
+
+        // Usamos tu clase IdGenerator
+        if (options?.generated === 'uuid') {
+            return IdGenerator.generate();
+        }
+        if (options?.generated === 'short-id') {
+            return IdGenerator.generateShort();
+        }
+
+        return Date.now().toString();
     }
 
     /**
