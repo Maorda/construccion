@@ -237,6 +237,7 @@ export class SheetsRepository<T extends object> {
         const sheetName = Reflect.getMetadata(SHEETS_TABLE_NAME, this.entityClass);
         const colMap = this.metadataRegistry.getColumnMap(this.entityClass);
 
+
         const row = new Array(Object.keys(colMap).length).fill('');
 
         // Mapeo posicional
@@ -245,7 +246,13 @@ export class SheetsRepository<T extends object> {
             if (index !== undefined) row[index] = value;
         }
 
-        await this.gateway.appendRow(sheetName, row);
+        try {
+            await this.gateway.appendRow(sheetName, row);
+            console.log(`✅ Datos enviados a ${sheetName}:`, row); // <--- DEBERÍAS VER ESTO
+        } catch (error) {
+            console.error(`❌ ERROR CRÍTICO AL GUARDAR EN SHEETS:`, error); // <--- REVISA TU CONSOLA AQUÍ
+            throw error;
+        }
 
         return entity; // Retorno de tipo T cumplido
     }

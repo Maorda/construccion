@@ -45,7 +45,7 @@ export class AdelantoEntity {
     @Column({ name: 'ID_OBRERO', required: true })
     idObrero: string;
 
-    @Column({ name: 'FECHA', type: 'date', required: true })
+    @Column({ name: 'FECHA', type: 'string', required: true })
     fecha: string;
 
     @Column({ name: 'MONTO', type: 'number', required: true })

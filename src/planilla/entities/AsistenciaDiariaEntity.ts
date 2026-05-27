@@ -1,13 +1,12 @@
 import { Column } from "@sheetOdm/decorators/column.decorator";
 import { PrimaryKey } from "@sheetOdm/decorators/primarykey.decorator";
 import { Table } from "@sheetOdm/decorators/table.decorator";
-import { IsString, IsNotEmpty } from "class-validator";
+import { IsString, IsNotEmpty, IsOptional } from "class-validator";
 
 
 export class CreateAsistenciaDiariaDto {
-    @IsString()
-    @IsNotEmpty()
-    id: string;
+    @IsOptional()
+    id?: string;
 
     @IsString()
     @IsNotEmpty()
@@ -42,7 +41,7 @@ export class AsistenciaDiariaEntity {
     @Column({ name: 'ID_OBRERO', required: true })
     idObrero: string;
 
-    @Column({ name: 'FECHA', type: 'date', required: true })
+    @Column({ name: 'FECHA', type: 'string', required: true })
     fecha: string; // YYYY-MM-DD
 
     @Column({ name: 'INGRESO_MANANA', default: '' })

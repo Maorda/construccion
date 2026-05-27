@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnApplicationBootstrap, OnModuleInit } from '@nestjs/common';
 import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
-import { SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants';
+import { SHEETS_DTO, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants';
 import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
 
 
@@ -24,7 +24,7 @@ export class InfrastructureProvisioner implements OnApplicationBootstrap {
 
         for (const entity of entities) {
             // --- 1. CAPA DE VALIDACIÓN (NUEVO) ---
-            const dto = Reflect.getMetadata('SHEET_DTO', entity);
+            const dto = Reflect.getMetadata(SHEETS_DTO, entity);
             if (!dto) {
                 throw new Error(`❌ Error: La entidad ${entity.name} no tiene un DTO vinculado. Por favor, define { dto: TuDto } en @Table.`);
             }

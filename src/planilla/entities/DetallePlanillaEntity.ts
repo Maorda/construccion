@@ -1,7 +1,7 @@
 import { Column } from "@sheetOdm/decorators/column.decorator";
 import { PrimaryKey } from "@sheetOdm/decorators/primarykey.decorator";
 import { Table } from "@sheetOdm/decorators/table.decorator";
-import { IsString, IsNotEmpty, IsNumber } from "class-validator";
+import { IsString, IsNotEmpty, IsNumber, IsOptional } from "class-validator";
 
 
 export class CreateDetallePlanillaDto {

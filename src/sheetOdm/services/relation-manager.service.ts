@@ -51,7 +51,7 @@ export class RelationManager {
 
             // Obtenemos el repositorio dinámicamente. 
             // El token debe seguir una convención: 'SheetsRepository_' + NombreClase
-            const repoToken = `SheetsRepository_${targetClass.name}`;
+            const repoToken = this.getRepoToken(targetClass);
             const repo = this.moduleRef.get<SheetsRepository<any>>(repoToken, { strict: false });
 
             const fkName = relOptions.options?.joinColumn || `id${parentClass.name.replace('Entity', '')}`;
@@ -67,5 +67,8 @@ export class RelationManager {
         // Usamos la misma convención que definiste en forFeature
         const repoToken = `${entityClass.name}Repository`;
         return this.moduleRef.get(repoToken, { strict: false });
+    }
+    private getRepoToken(entityClass: Function): string {
+        return `${entityClass.name}Repository`;
     }
 }
