@@ -11,10 +11,15 @@ export class ProjectionService {
      * Aplica proyección usando tus tipos definidos para máxima seguridad.
      */
     project<T extends object>(
-        item: T,
+        item: T | T[],
         entityClass: ClassType<T>,
         projection?: Projection<T>
-    ): Partial<T> {
+    ): Partial<T> | Partial<T>[] {
+
+        // Si es un arreglo, mapeamos cada elemento individualmente
+        if (Array.isArray(item)) {
+            return item.map(i => this.project(i, entityClass, projection) as Partial<T>);
+        }
 
         // 1. Si no hay proyección, retornamos el objeto serializado completo
         if (!projection || Object.keys(projection).length === 0) {

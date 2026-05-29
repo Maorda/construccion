@@ -6,7 +6,7 @@ import { AdelantoEntity } from '../entities/AdelantoEntity';
 import { AsistenciaDiariaEntity } from '../entities/AsistenciaDiariaEntity';
 import { InjectModel, Model, SheetsRepository, SheetsRepositoryFactory } from '@sheetOdm/index';
 import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
-import { Projection, ProjectionService } from '@sheetOdm/core/base/services/projection.service';
+import { ProjectionService } from '@sheetOdm/engines/projection.service';
 
 
 @Injectable()
@@ -62,12 +62,17 @@ export class PlanillaTareoService {
     }
 
     async findOne(id: string, projection?: any) {
-        /* const item = await new this.detallePlanillaModel(id).find({id});
-         if (!item) {
-             throw new NotFoundException(`DetallePlanilla con ID ${id} no encontrado`);
-         }
-         return this.projectionService.project(item, DetallePlanillaEntity, projection);
-         */
+        const items = await this.detallePlanillaModel.find({ id });
+
+        // El resultado de 'find' siempre es un array. Tomamos el primero si existe.
+        const item = items && items.length > 0 ? items[0] : null;
+
+        if (!item) {
+            throw new NotFoundException(`DetallePlanilla con ID ${id} no encontrado`);
+        }
+
+        // Ahora el ProjectionService aceptará el objeto 'item' sin quejarse
+        return this.projectionService.project(item, DetallePlanillaEntity, projection);
     }
 
 

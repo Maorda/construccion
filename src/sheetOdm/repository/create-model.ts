@@ -14,8 +14,8 @@ export type Model<T extends object> = {
     // Métodos estáticos (Query Engine)
     save(data: Partial<T>): Promise<T & SheetDocument<T>>;
     find(filter?: FilterQuery<T>, options?: any): Promise<Partial<T>[]>;
-    findOne(filter?: FilterQuery<T>, projection?: any): Promise<Partial<T> | null>;
-    findOneAndUpdate(filter: FilterQuery<T>, update: any, options?: any): Promise<Partial<T> | null>;
+    // findOne(filter?: FilterQuery<T>, projection?: any): Promise<Partial<T> | null>;
+    //findOneAndUpdate(filter: FilterQuery<T>, update: any, options?: any): Promise<Partial<T> | null>;
 };
 
 export function createModel<T extends object>(
@@ -80,13 +80,13 @@ export function createModel<T extends object>(
         repo.find(filter, options);
 
     // 2. Vinculamos FIND ONE (Necesario)
-    (ModelClass as any).findOne = (filter: FilterQuery<T>, projection?: any) =>
-        repo.findOne(filter, projection);
-
-    // 3. Vinculamos FIND ONE AND UPDATE (Necesario)
-    (ModelClass as any).findOneAndUpdate = (filter: FilterQuery<T>, update: any, options?: any) =>
-        repo.findOneAndUpdate(filter, update, options);
-
+    /* (ModelClass as any).findOne = (filter: FilterQuery<T>, projection?: any) =>
+         repo.findOne(filter, projection);
+ 
+     // 3. Vinculamos FIND ONE AND UPDATE (Necesario)
+     (ModelClass as any).findOneAndUpdate = (filter: FilterQuery<T>, update: any, options?: any) =>
+         repo.findOneAndUpdate(filter, update, options);
+*/
     // 4. Implementamos el estático "SAVE" (o "CREATE")
     // Nota: Es mejor llamarlo "create" para no confundirlo con la instancia .save()
     (ModelClass as any).save = async (data: Partial<T>) => {

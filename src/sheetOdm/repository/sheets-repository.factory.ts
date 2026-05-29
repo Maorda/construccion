@@ -8,6 +8,7 @@ import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
 import { RelationManager } from '@sheetOdm/services/relation-manager.service';
 import { DataMapper } from '@sheetOdm/services/data-mapper.service';
 import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
+import { ProjectionService } from '@sheetOdm/engines/projection.service';
 
 @Injectable()
 export class SheetsRepositoryFactory {
@@ -20,6 +21,7 @@ export class SheetsRepositoryFactory {
         private readonly relationManager: RelationManager,
         private readonly dataMapper: DataMapper,
         private readonly hydrator: SheetDocumentHydrator,
+        private readonly projectionService: ProjectionService,
     ) { }
 
     /**

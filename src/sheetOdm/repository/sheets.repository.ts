@@ -201,35 +201,7 @@ export class SheetsRepository<T extends object> {
         return results.length > 0 ? results[0] : null;
     }*/
 
-    async save1(data: T): Promise<T> {
-        const relationsList = this.metadataRegistry.getRelationsList(this.entityClass);
-        const parentData: any = { ...data };
-        const relationsToSave: Record<string, any[]> = {};
 
-        for (const relKey of relationsList) {
-            if (parentData[relKey]) {
-                relationsToSave[relKey] = parentData[relKey];
-                delete parentData[relKey];
-            }
-        }
-
-        // Ahora savedParent es de tipo T
-        const savedParent = await this.create1(parentData);
-
-        // Pasamos el padre guardado al RelationManager
-        await this.relationManager.saveChildren(savedParent, relationsToSave, this.entityClass);
-
-        return savedParent; // TypeScript ahora es feliz porque savedParent es T
-    }
-
-    debugRow(row: any[], colMap: Record<string, number>, entityClass: any) {
-        const debugMap = Object.entries(colMap).reduce((acc, [prop, index]) => {
-            acc[index] = { prop, value: row[index] };
-            return acc;
-        }, {} as any);
-
-        this.logger.debug(`[DEBUG MAPPING] Estructura final a enviar: ${JSON.stringify(debugMap, null, 2)}`);
-    }
     async save5(doc: SheetDocument<T>): Promise<SheetDocument<T>> {
         const sheetName = Reflect.getMetadata(SHEETS_TABLE_NAME, this.entityClass);
 

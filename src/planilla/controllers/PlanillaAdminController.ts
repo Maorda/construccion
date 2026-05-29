@@ -48,5 +48,13 @@ export class PlanillaAdminController {
             throw error;
         }
     }
+    @Post('detalle/:id')
+    async getDetalle(
+        @Param('id') id: string,
+        @Body() projection?: any // El usuario envía qué campos quiere ver
+    ) {
+        // Llamamos al servicio que configuramos anteriormente
+        return await this.planillaService.findOne(id, projection);
+    }
 
 }

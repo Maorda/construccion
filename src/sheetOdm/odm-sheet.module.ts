@@ -45,7 +45,9 @@ const CORE_PROVIDERS: Provider[] = [
     SheetDataGateway,
     RelationManager,
     DataMapper,
-    SheetDocumentHydrator
+    SheetDocumentHydrator,
+    ProjectionService,
+
 ];
 
 @Global()

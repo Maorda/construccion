@@ -106,4 +106,13 @@ export class SheetDocument<T extends object> {
 
         return jsonObj;
     }
+    async save(): Promise<this> {
+        return await this._repo.save5(this) as this;
+    }
+
+    markAsSaved(rowNumber?: number): void {
+        this._isNew = false;
+        if (rowNumber) this[ROW_INDEX_SYMBOL as any] = rowNumber;
+        this._snapshot = this.toObject(true);
+    }
 }
