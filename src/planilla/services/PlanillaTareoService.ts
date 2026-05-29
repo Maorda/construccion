@@ -62,7 +62,7 @@ export class PlanillaTareoService {
     }
 
     async findOne(id: string, projection?: any) {
-        const items = await this.detallePlanillaModel.find({ id });
+        const items = await this.detallePlanillaModel.find({ idObrero: id });
 
         // El resultado de 'find' siempre es un array. Tomamos el primero si existe.
         const item = items && items.length > 0 ? items[0] : null;

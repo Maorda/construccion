@@ -167,9 +167,9 @@ export class SheetsRepository<T extends object> {
                     const colIndex = this.headers.indexOf(headerName);
 
                     if (colIndex !== -1 && row[colIndex] !== undefined) {
-                        item[prop] = this.hydrateValue(row[colIndex], colConfig.type);
+                        (item as any)[prop] = this.hydrateValue(row[colIndex], colConfig.type);
                     } else {
-                        item[prop] = colConfig.default ?? null;
+                        (item as any)[prop] = colConfig.default ?? null;
                     }
                 });
 
