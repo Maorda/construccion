@@ -4,6 +4,8 @@ export type Projection<T = any> = {
     [P in keyof T]?: boolean | number;
 } | Record<string, any>;
 
+
+
 export interface IQueryEngine {
     execute<T extends object>(data: T[], instructions: any): any[];
     aggregate<T extends object>(data: T[], pipeline: any[]): Promise<any[]>;

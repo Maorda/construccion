@@ -7,6 +7,7 @@ import { SheetsRepository, GLOBAL_REPO_REGISTRY } from './sheets.repository';
 import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
 import { RelationManager } from '@sheetOdm/services/relation-manager.service';
 import { DataMapper } from '@sheetOdm/services/data-mapper.service';
+import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
 
 @Injectable()
 export class SheetsRepositoryFactory {
@@ -18,6 +19,7 @@ export class SheetsRepositoryFactory {
         private readonly gateway: SheetDataGateway,
         private readonly relationManager: RelationManager,
         private readonly dataMapper: DataMapper,
+        private readonly hydrator: SheetDocumentHydrator,
     ) { }
 
     /**
@@ -33,6 +35,7 @@ export class SheetsRepositoryFactory {
             entityClass,
             this.relationManager,
             this.dataMapper,
+            this.hydrator,
         );
 
         // repo.entityClass = entityClass;

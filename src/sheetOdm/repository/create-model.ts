@@ -1,4 +1,5 @@
 import { SHEETS_COLUMN_DETAILS, SHEETS_COLUMN_LIST } from '@sheetOdm/constants/metadata.constants';
+import { ROW_INDEX_SYMBOL } from '@sheetOdm/constants/metadata.constants'; // <-- Importación necesaria
 import { SheetsRepository } from './sheets.repository';
 import { ClassType, FilterQuery } from '@sheetOdm/types/query.types';
 import { deepClone, SheetDocument } from '@sheetOdm/wrapper/sheet.document';
@@ -6,34 +7,27 @@ import { Inject, Logger } from '@nestjs/common';
 
 export const InjectModel = (entity: Function) => Inject(`${entity.name}Model`);
 
-export type Model<T> = {
+export type Model<T extends object> = {
     // Constructor para instancias (Active Record)
-    new(data?: Partial<T>): T & {
-        save(): Promise<T>;
-        softDelete(): Promise<void>;
-        __row?: number;
-    };
+    new(data?: Partial<T>): T & SheetDocument<T>;
 
     // Métodos estáticos (Query Engine)
+    save(data: Partial<T>): Promise<T & SheetDocument<T>>;
     find(filter?: FilterQuery<T>, options?: any): Promise<Partial<T>[]>;
     findOne(filter?: FilterQuery<T>, projection?: any): Promise<Partial<T> | null>;
     findOneAndUpdate(filter: FilterQuery<T>, update: any, options?: any): Promise<Partial<T> | null>;
 };
 
-/**
- * los métodos de instancia deben enfocarse en dos cosas: la gestión del estado del documento
- * (qué ha cambiado) y la navegación de datos (relaciones).
- */
 export function createModel<T extends object>(
     entityClass: ClassType<T>,
     repo: SheetsRepository<T>
 ): Model<T> {
     const ModelClass = class extends SheetDocument<T> {
         constructor(data?: Partial<T>) {
-            // 1. Pasamos un objeto vacío inicial seguro al padre para evitar que se raye con un POJO sin prototipo
+            // 1. Pasamos un objeto vacío inicial seguro al padre
             super({} as T, repo, false);
 
-            // 2. INYECCIÓN CRÍTICA DE CONTEXTO: Fijamos la clase real de la entidad inmediatamente
+            // 2. INYECCIÓN CRÍTICA DE CONTEXTO
             (this as any)._entityClass = entityClass;
 
             // 3. HIDRATACIÓN DIRECTA DE LA INSTANCIA
@@ -41,10 +35,11 @@ export function createModel<T extends object>(
                 Object.assign(this, data);
             }
 
-            // 4. ESTABILIZACIÓN DEL ESTADO DE NUEVO
-            this._isNew = !data || !(data as any).__row;
+            // 4. ESTABILIZACIÓN DEL ESTADO DE NUEVO (Refactorizado)
+            // Usamos el Symbol para verificar si el objeto tiene una fila física asignada
+            this._isNew = !data || (data as any)[ROW_INDEX_SYMBOL] === undefined;
 
-            // 5. BLINDAJE DEL SNAPSHOT: Forzamos el snapshot inicial con los datos limpios
+            // 5. BLINDAJE DEL SNAPSHOT
             try {
                 const plainData = typeof this.toObject === 'function' ? this.toObject() : (data ? deepClone(data) : {});
                 (this as any)._snapshot = deepClone(plainData);
@@ -54,23 +49,22 @@ export function createModel<T extends object>(
         }
 
         // --- MÉTODOS DE INSTANCIA (Active Record) ---
-        async save(): Promise<T> {
+        async save(): Promise<this> {
             try {
                 if (!this.isModified()) {
-                    return this as any;
+                    return this;
                 }
             } catch (error) {
                 const logger = new Logger('ModelFactory-Fallback');
                 logger.warn(`[Factory] Error analizando deltas (isModified). Forzando persistencia directa.`);
             }
 
-            return await super.save();
+            await super.save();
+            return this;
         }
     };
 
     // ⚡ PUENTE DE METADATOS VITAL:
-    // Extraemos los metadatos de las columnas grabados en la Entidad original (ej: ObreroEntity)
-    // y los soldamos en el prototipo de la clase dinámica del Modelo para que SheetDocument los lea.
     const entityMetadata = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, entityClass.prototype);
     if (entityMetadata) {
         Reflect.defineMetadata(SHEETS_COLUMN_DETAILS, entityMetadata, ModelClass.prototype);
@@ -81,20 +75,27 @@ export function createModel<T extends object>(
         Reflect.defineMetadata(SHEETS_COLUMN_LIST, columnList, ModelClass.prototype);
     }
 
-    // --- MÉTODOS ESTÁTICOS (Estilo Mongoose) ---
+    // --- MÉTODOS ESTÁTICOS ---
     (ModelClass as any).find = (filter: FilterQuery<T>, options?: any) =>
         repo.find(filter, options);
 
-    (ModelClass as any).findOne = (filter: FilterQuery<T>) =>
-        repo.findOne(filter);
+    // 2. Vinculamos FIND ONE (Necesario)
+    (ModelClass as any).findOne = (filter: FilterQuery<T>, projection?: any) =>
+        repo.findOne(filter, projection);
 
+    // 3. Vinculamos FIND ONE AND UPDATE (Necesario)
     (ModelClass as any).findOneAndUpdate = (filter: FilterQuery<T>, update: any, options?: any) =>
         repo.findOneAndUpdate(filter, update, options);
 
-    // ⚡ ENLACE DIRECTO DE SEGURIDAD:
-    // Guardamos la referencia de la entidad original en el prototipo del modelo
+    // 4. Implementamos el estático "SAVE" (o "CREATE")
+    // Nota: Es mejor llamarlo "create" para no confundirlo con la instancia .save()
+    (ModelClass as any).save = async (data: Partial<T>) => {
+        const instance = new ModelClass(data);
+        return await instance.save();
+    };
+
+    // ⚡ ENLACE DIRECTO DE SEGURIDAD
     (ModelClass.prototype as any)._entityClass = entityClass;
 
-    // Retornamos la clase tipada como Model<T>
     return ModelClass as unknown as Model<T>;
 }

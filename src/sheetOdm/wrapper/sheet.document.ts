@@ -1,5 +1,5 @@
 import { SheetsRepository } from '@sheetOdm/repository/sheets.repository';
-import { SHEETS_COLUMN_DETAILS } from '@sheetOdm/constants/metadata.constants';
+import { SHEETS_COLUMN_DETAILS, ROW_INDEX_SYMBOL, SHEETS_VIRTUAL_COLUMNS } from '@sheetOdm/constants/metadata.constants';
 
 export function deepClone<T>(obj: T): T {
     if (obj === null || obj === undefined) return obj;
@@ -9,6 +9,7 @@ export function deepClone<T>(obj: T): T {
     }
     if (typeof obj === 'object') {
         const cloned: any = {};
+        // Object.keys ignora los Symbols, por lo que ROW_INDEX_SYMBOL NO se clonará al snapshot
         for (const key of Object.keys(obj)) {
             cloned[key] = deepClone((obj as any)[key]);
         }
@@ -18,7 +19,11 @@ export function deepClone<T>(obj: T): T {
 }
 
 export class SheetDocument<T extends object> {
-    public __row?: number;
+    [key: string]: any;
+
+    // Ya no es pública. Se accede mediante el Symbol para evitar colisiones y polución
+    protected [ROW_INDEX_SYMBOL]?: number;
+
     protected _isNew: boolean;
     protected _snapshot: any;
     protected _entityClass: any;
@@ -27,7 +32,9 @@ export class SheetDocument<T extends object> {
     constructor(data: Partial<T>, repo: SheetsRepository<T>, isNew = true) {
         this._repo = repo;
         this._isNew = isNew;
-        this.__row = (data as any).__row;
+
+        // Asignación del índice de fila usando el Symbol
+        this[ROW_INDEX_SYMBOL as any] = (data as any)[ROW_INDEX_SYMBOL];
 
         // Hidratar campos
         Object.assign(this, data);
@@ -36,9 +43,6 @@ export class SheetDocument<T extends object> {
         this._snapshot = this.toObject(true);
     }
 
-    /**
-     * Compara el estado actual con el snapshot inicial para determinar si un campo o todo el documento ha mutado.
-     */
     isModified(path?: string): boolean {
         if (this._isNew) return true;
 
@@ -46,7 +50,6 @@ export class SheetDocument<T extends object> {
             return JSON.stringify(this._snapshot[path]) !== JSON.stringify((this as any)[path]);
         }
 
-        // Obtener todas las propiedades decoradas como columnas
         const details = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, this.constructor.prototype) || {};
         const columns = Object.keys(details);
 
@@ -61,14 +64,9 @@ export class SheetDocument<T extends object> {
         return false;
     }
 
-    /**
-     * Convierte la instancia activa en un objeto plano (POJO).
-     * @param includeRow Si es true, incluye el identificador de fila física __row.
-     */
     toObject(includeRow = false): T {
         const obj: any = {};
 
-        // Solo copiamos las propiedades que están registradas como Columnas en los metadatos
         const targetPrototype = this._entityClass ? this._entityClass.prototype : Object.getPrototypeOf(this);
         const details = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, targetPrototype) || {};
         const columns = Object.keys(details);
@@ -77,54 +75,35 @@ export class SheetDocument<T extends object> {
             obj[col] = (this as any)[col] !== undefined ? (this as any)[col] : null;
         }
 
-        if (includeRow && this.__row !== undefined) {
-            obj.__row = this.__row;
+        // Si se solicita, extraemos el valor del Symbol y lo ponemos como __row para compatibilidad
+        if (includeRow && this[ROW_INDEX_SYMBOL as any] !== undefined) {
+            obj.__row = this[ROW_INDEX_SYMBOL as any];
         }
 
         return obj as T;
     }
 
-    /**
-     * Guarda los cambios locales del documento en la hoja de Google Sheets.
-     */
-    async save(): Promise<T> {
-        let result: T;
+    toJSON() {
+        const jsonObj: any = {};
+        const proto = Object.getPrototypeOf(this);
 
-        if (this._isNew) {
-            const dataToCreate = this.toObject();
-            result = await this._repo.create(dataToCreate);
-            this._isNew = false;
-        } else {
-            const dataToUpdate = this.toObject();
-            const pkField = this._repo.getPrimaryKeyField();
-            const id = (this as any)[pkField];
+        // 1. Campos Persistentes (Metadata Registry)
+        const details = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, this.constructor) || {};
+        Object.keys(details).forEach(key => {
+            jsonObj[key] = (this as any)[key] ?? null;
+        });
 
-            // Si tenemos el número de fila física, lo mandamos para optimizar la velocidad
-            result = await this._repo.update(id, dataToUpdate, { rowNumber: this.__row });
-        }
+        // 2. Campos Virtuales (La magia de la proyección automática)
+        const virtuals = Reflect.getMetadata(SHEETS_VIRTUAL_COLUMNS, this.constructor) || [];
 
-        // Sincronizar el estado del documento con el resultado retornado
-        Object.assign(this, result);
-        this.__row = (result as any).__row;
-        this._snapshot = this.toObject(true);
+        virtuals.forEach((v: { propertyKey: string, group: string }) => {
+            const value = (this as any)[v.propertyKey];
 
-        return this as unknown as T;
-    }
+            // Al ser obligatorio, sabemos que v.group siempre existe
+            if (!jsonObj[v.group]) jsonObj[v.group] = {};
+            jsonObj[v.group][v.propertyKey] = value;
+        });
 
-    /**
-     * Elimina lógicamente (o físicamente si no tiene DeleteControl) el registro de la hoja.
-     */
-    async softDelete(): Promise<void> {
-        if (this._isNew) return;
-
-        const pkField = this._repo.getPrimaryKeyField();
-        const id = (this as any)[pkField];
-
-        const deleted = await this._repo.delete(id);
-        if (deleted) {
-            this._isNew = true;
-            this.__row = undefined;
-            this._snapshot = {};
-        }
+        return jsonObj;
     }
 }

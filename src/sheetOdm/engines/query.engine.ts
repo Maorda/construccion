@@ -10,7 +10,7 @@ export class QueryEngine implements IQueryEngine {
         private readonly expressionEngine: ExpressionEngine,
         private readonly aggregationEngine: AggregationEngine,
         private readonly projectionService: ProjectionService,
-    ) {}
+    ) { }
 
     /**
      * Ejecuta una consulta de filtrado, ordenamiento y paginación sobre una colección en memoria.
@@ -53,7 +53,7 @@ export class QueryEngine implements IQueryEngine {
 
         // 5. Proyección
         if (options?.projection) {
-            results = results.map(item => this.projectionService.project(item, options.projection));
+            // results = results.map(item => this.projectionService.project(item, options.projection));
         }
 
         return results;

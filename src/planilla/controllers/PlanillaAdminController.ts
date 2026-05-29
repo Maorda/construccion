@@ -12,35 +12,35 @@ export class PlanillaAdminController {
 
     ) { }
 
-    @Post('categorias')
-    @HttpCode(HttpStatus.CREATED)
-    async crearCategoria(@Body() dto: CreateCategoriaDto) {
-        this.logger.log(`Recibiendo petición para guardar categoría: ${dto.id}`);
-        try {
-            return await this.planillaService.crearCategoria(dto);
-        } catch (error) {
-            this.logger.error(`Error al guardar: ${error.message}`);
-            throw error;
-        }
-    }
-    @Post('obrero')
-    @HttpCode(HttpStatus.CREATED)
-    async createObrero(@Body() body: any) {
-        this.logger.log(`Recibiendo petición para guardar obrero: ${body.id}`);
-        try {
-            return await this.planillaService.createObreroConAdelantos(body);
-        } catch (error) {
-            this.logger.error(`Error al guardar: ${error.message}`);
-            throw error;
-        }
-    }
+    /* @Post('categorias')
+     @HttpCode(HttpStatus.CREATED)
+     async crearCategoria(@Body() dto: CreateCategoriaDto) {
+         this.logger.log(`Recibiendo petición para guardar categoría: ${dto.id}`);
+         try {
+             return await this.planillaService.crearCategoria(dto);
+         } catch (error) {
+             this.logger.error(`Error al guardar: ${error.message}`);
+             throw error;
+         }
+     }
+     @Post('obrero')
+     @HttpCode(HttpStatus.CREATED)
+     async createObrero(@Body() body: any) {
+         this.logger.log(`Recibiendo petición para guardar obrero: ${body.id}`);
+         try {
+             return await this.planillaService.createObreroConAdelantos(body);
+         } catch (error) {
+             this.logger.error(`Error al guardar: ${error.message}`);
+             throw error;
+         }
+     }*/
     @Post('detalle')
     @HttpCode(HttpStatus.CREATED)
     async createDetalle(@Body() dto: CreateDetallePlanillaDto) {
         // console.log('DTO recibido:', dto);
         this.logger.log(`Recibiendo petición para guardar detalle: ${JSON.stringify(dto)}`);
         try {
-            const result = await this.planillaService.createDetalle(dto);
+            const result = await this.planillaService.save(dto);
             console.log('✅ Resultado del guardado en Sheets:', result); // <--- AGREGAR
             return result;
         } catch (error) {

@@ -1,10 +1,11 @@
 // sheet-data.gateway.ts
 import { Injectable, Logger, Inject } from '@nestjs/common';
+import { ISheetDriver } from '@sheetOdm/core/interfaces/sheet-driver.interface';
 import { GoogleAutenticarService } from '@sheetOdm/services/auth.google.service';
 
 
 @Injectable()
-export class SheetDataGateway {
+export class SheetDataGateway implements ISheetDriver {
     private readonly logger = new Logger(SheetDataGateway.name);
 
     constructor(
@@ -29,13 +30,31 @@ export class SheetDataGateway {
             requestBody: { values: [headers] }
         });
     }
-    async appendRow(sheetName: string, values: any[]) {
-        await this.auth.sheets.spreadsheets.values.append({
-            spreadsheetId: this.spreadsheetId,
-            range: `${sheetName}!A1`,
-            valueInputOption: 'USER_ENTERED',
-            requestBody: { values: [values] }
-        });
+    async appendRow(sheetName: string, row: any[]): Promise<number> {
+        try {
+            // Tu llamada actual a la API de Google
+            const response = await this.auth.sheets.spreadsheets.values.append({
+                spreadsheetId: this.spreadsheetId,
+                range: `${sheetName}!A:A`,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { values: [row] },
+            });
+
+            // 🎯 Extraemos el rango actualizado directamente desde la respuesta real de Google
+            const updatedRange = response.data?.updates?.updatedRange; // Ej: "DETALLES_PLANILLA!A15:O15"
+
+            if (updatedRange) {
+                const match = updatedRange.match(/\d+$/); // Captura el último número del rango (la fila)
+                if (match) {
+                    return parseInt(match[0], 10); // Retorna ej: 15
+                }
+            }
+
+            throw new Error(`No se pudo determinar la fila física insertada en ${sheetName}`);
+        } catch (error: any) {
+            this.logger.error(`Error en appendRow para ${sheetName}: ${error.message}`);
+            throw error;
+        }
     }
 
     async getExistingSheetTitles(): Promise<string[]> {
@@ -51,5 +70,22 @@ export class SheetDataGateway {
             valueInputOption: 'RAW', // O 'USER_ENTERED' según convenga
         });
         return res.data.values || [];
+    }
+    async updateRow(sheetName: string, rowNumber: number, values: any[]) {
+        try {
+            // En Google Sheets, apuntamos directamente a la fila exacta usando el rango A{rowNumber}
+            await this.auth.sheets.spreadsheets.values.update({
+                spreadsheetId: this.spreadsheetId,
+                range: `${sheetName}!A${rowNumber}`,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { values: [values] },
+            });
+
+            // 🎯 Devolvemos consistentemente el número de fila modificado
+            return rowNumber;
+        } catch (error: any) {
+            this.logger.error(`Error en updateRow para ${sheetName} en fila ${rowNumber}: ${error.message}`);
+            throw error;
+        }
     }
 }

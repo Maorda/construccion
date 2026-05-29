@@ -4,7 +4,9 @@ import { CreateDetallePlanillaDto, DetallePlanillaEntity } from '../entities/Det
 import { ObreroEntity } from '../entities/ObreroEntity';
 import { AdelantoEntity } from '../entities/AdelantoEntity';
 import { AsistenciaDiariaEntity } from '../entities/AsistenciaDiariaEntity';
-import { InjectModel, SheetsRepository } from '@sheetOdm/index';
+import { InjectModel, Model, SheetsRepository, SheetsRepositoryFactory } from '@sheetOdm/index';
+import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
+import { Projection, ProjectionService } from '@sheetOdm/core/base/services/projection.service';
 
 
 @Injectable()
@@ -12,27 +14,23 @@ export class PlanillaTareoService {
     private readonly logger = new Logger(PlanillaTareoService.name);
 
     constructor(
-        // Cambia el tipo inyectado por el token específico
-        @Inject('CategoriaEntityRepository')
-        private readonly repo: any,
-        @Inject('ObreroEntityRepository')
-        private readonly obreroRepository: SheetsRepository<ObreroEntity>,
-        @Inject('DetallePlanillaEntityRepository')
-        private readonly detallePlanillaRepository: SheetsRepository<DetallePlanillaEntity>
+        @InjectModel(DetallePlanillaEntity)
+        private readonly detallePlanillaModel: Model<DetallePlanillaEntity>,
+        private readonly projectionService: ProjectionService
     ) { }
 
     /**
      * 1. Crear Categoría Tarifaria (Maestro)
      */
-    async crearCategoria(dto: CategoriaEntity) {
-        if (!dto.id) {
-            throw new Error("El ID de la categoría es obligatorio para la operación.");
-        }
-        const doc = await this.repo.create1(dto);
-        return { message: 'Categoría creada correctamente en Sheets' };
-    }
+    /* async crearCategoria(dto: CategoriaEntity) {
+         if (!dto.id) {
+             throw new Error("El ID de la categoría es obligatorio para la operación.");
+         }
+         const doc = await this.repo.create1(dto);
+         return { message: 'Categoría creada correctamente en Sheets' };
+     }*/
 
-    async createObreroConAdelantos(data: any): Promise<ObreroEntity> {
+    /*async createObreroConAdelantos(data: any): Promise<ObreroEntity> {
         // Aquí podrías añadir validación adicional o transformación de DTO a Entidad
         const obrero = new ObreroEntity();
         obrero.nombre = data.nombre;
@@ -52,29 +50,26 @@ export class PlanillaTareoService {
 
         // Llamamos al método que implementamos: save1
         return await this.obreroRepository.save1(obrero);
+    }*/
+
+    /**
+     * Persiste o actualiza un registro en Google Sheets
+     */
+    async save(dto: CreateDetallePlanillaDto): Promise<DetallePlanillaEntity> {
+        // La magia: el modelo se encarga de transformar el DTO en entidad 
+        // y gestionar la persistencia en la hoja correspondiente.
+        return await new this.detallePlanillaModel(dto).save();
     }
 
-    async createDetalle(dto: CreateDetallePlanillaDto): Promise<any> {
-        // 1. Transformamos el DTO a Entidad
-        const detalle = Object.assign(new DetallePlanillaEntity(), dto);
-
-        // 2. Persistimos (esto usará tu lógica de ID generado y mapeo)
-        const saved = await this.detallePlanillaRepository.save1(detalle);
-
-        // 3. Retornamos incluyendo los cálculos de los Getters
-        // Usamos spread para incluir los resultados de los métodos getter
-        return {
-            ...saved,
-            calculos: {
-                bolsaTotalHorasExtras: detalle.bolsaTotalHorasExtras,
-                montoJornadaNormal: detalle.montoJornadaNormal,
-                montoHorasExtrasBolsa: detalle.montoHorasExtrasBolsa,
-                salarioNetoCalculado: detalle.salarioNetoCalculado,
-                saldoPendiente: detalle.saldoEfectivoPendienteProximaSemana,
-                deudaHoras: detalle.deudaHorasProximaSemana
-            }
-        };
+    async findOne(id: string, projection?: any) {
+        /* const item = await new this.detallePlanillaModel(id).find({id});
+         if (!item) {
+             throw new NotFoundException(`DetallePlanilla con ID ${id} no encontrado`);
+         }
+         return this.projectionService.project(item, DetallePlanillaEntity, projection);
+         */
     }
+
 
 
 }

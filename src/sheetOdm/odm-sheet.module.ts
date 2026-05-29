@@ -26,6 +26,7 @@ import { SheetDataGateway } from './gateway/sheetDataGateway';
 import { SheetsRepository } from './repository/sheets.repository';
 import { RelationManager } from './services/relation-manager.service';
 import { DataMapper } from './services/data-mapper.service';
+import { SheetDocumentHydrator } from './core/base/SheetDocumentHydrator';
 
 const CORE_PROVIDERS: Provider[] = [
     GoogleAutenticarService,
@@ -44,6 +45,7 @@ const CORE_PROVIDERS: Provider[] = [
     SheetDataGateway,
     RelationManager,
     DataMapper,
+    SheetDocumentHydrator
 ];
 
 @Global()

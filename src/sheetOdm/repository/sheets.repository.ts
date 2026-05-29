@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { GoogleAutenticarService } from '@sheetOdm/services/auth.google.service';
 import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
@@ -5,17 +6,19 @@ import { QueryEngine } from '@sheetOdm/engines/query.engine';
 import type { DatabaseModuleOptions } from '@sheetOdm/interfaces/database.options.interface';
 import { ClassType, FilterQuery, QueryOptions, UpdateOptions } from '@sheetOdm/types/query.types';
 import { NamingStrategy } from '@sheetOdm/strategy/naming.strategy';
-import { SHEETS_REPOSITORY_MARKER, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants';
+import { ROW_INDEX_SYMBOL, SHEETS_COLUMN_DETAILS, SHEETS_REPOSITORY_MARKER, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants';
 import { v4 as uuidv4 } from 'uuid';
 import * as Joi from 'joi';
 import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
 import { DataMapper } from '@sheetOdm/services/data-mapper.service';
 import { RelationManager } from '@sheetOdm/services/relation-manager.service';
 import { IdGenerator } from '@sheetOdm/utils/id.generator';
+import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
+import { SheetDocument } from '@sheetOdm/wrapper/sheet.document';
 
 @Injectable()
 export class SheetsRepository<T extends object> {
-    private readonly logger = new Logger(SheetsRepository.name);
+    readonly logger = new Logger(SheetsRepository.name);
     public readonly [SHEETS_REPOSITORY_MARKER] = true;
 
     public sheetName!: string;
@@ -31,12 +34,12 @@ export class SheetsRepository<T extends object> {
         public readonly entityClass: ClassType<T>,
         protected readonly relationManager: RelationManager,
         protected readonly dataMapper: DataMapper,
+        private readonly hydrator: SheetDocumentHydrator
+
+
     ) {
 
     }
-
-
-
     /**
      * Inicializa la infraestructura de la pestaña: la crea si no existe y ejecuta auto-migraciones de columnas.
      */
@@ -125,6 +128,8 @@ export class SheetsRepository<T extends object> {
         }
     }
 
+
+
     /**
      * Obtiene el campo físico o mapeado de la llave primaria.
      */
@@ -135,22 +140,26 @@ export class SheetsRepository<T extends object> {
     /**
      * Consulta registros aplicando filtros, ordenamiento, límites y proyecciones.
      */
-    async find(filter?: FilterQuery<T>, options?: QueryOptions): Promise<Partial<T>[]> {
+    async find(filter?: FilterQuery<T>, options?: QueryOptions): Promise<SheetDocument<T>[]> {
         const spreadsheetId = this.optionsDatabase.SPREADSHEET_ID;
 
         try {
             const response = await this.googleSheets.sheets.spreadsheets.values.get({
                 spreadsheetId,
-                range: `${this.sheetName}!A2:Z10000`, // Traer un rango amplio de registros
+                range: `${this.sheetName}!A2:Z10000`,
             });
 
             const rows: any[][] = response.data.values || [];
             const details = this.metadataRegistry.getColumnDetails(this.entityClass);
+            // El columnMap parece no usarse en este bloque, pero lo mantenemos por si acaso
             const columnMap = this.metadataRegistry.getColumnMap(this.entityClass);
 
             // Mapear cada fila plana en una instancia limpia de la Entidad
             let items: any[] = rows.map((row, index) => {
-                const item: any = { __row: index + 2 }; // Fila física real (index 0 es fila 2)
+                // 🌟 REFACTOR: Ya no inyectamos __row como propiedad pública.
+                // Usamos el Symbol para mantener el índice de la fila física (index 0 es fila 2).
+                const item: any = {};
+                item[ROW_INDEX_SYMBOL] = index + 2;
 
                 Object.keys(details).forEach(prop => {
                     const colConfig = details[prop];
@@ -167,7 +176,7 @@ export class SheetsRepository<T extends object> {
                 return item;
             });
 
-            // 1. Filtrar los eliminados lógicamente de forma automática (Soft Delete)
+            // 1. Filtrar los eliminados lógicamente
             const deleteControlProp = this.metadataRegistry.getDeleteControlProperty(this.entityClass);
             if (deleteControlProp && !options?.includeInactive) {
                 items = items.filter(item => {
@@ -187,10 +196,10 @@ export class SheetsRepository<T extends object> {
     /**
      * Obtiene un único registro.
      */
-    async findOne(filter?: FilterQuery<T>, projection?: any): Promise<Partial<T> | null> {
+    /*async findOne(filter?: FilterQuery<T>, projection?: any): Promise<Partial<T> | null> {
         const results = await this.find(filter, { limit: 1, projection });
         return results.length > 0 ? results[0] : null;
-    }
+    }*/
 
     async save1(data: T): Promise<T> {
         const relationsList = this.metadataRegistry.getRelationsList(this.entityClass);
@@ -211,6 +220,65 @@ export class SheetsRepository<T extends object> {
         await this.relationManager.saveChildren(savedParent, relationsToSave, this.entityClass);
 
         return savedParent; // TypeScript ahora es feliz porque savedParent es T
+    }
+
+    debugRow(row: any[], colMap: Record<string, number>, entityClass: any) {
+        const debugMap = Object.entries(colMap).reduce((acc, [prop, index]) => {
+            acc[index] = { prop, value: row[index] };
+            return acc;
+        }, {} as any);
+
+        this.logger.debug(`[DEBUG MAPPING] Estructura final a enviar: ${JSON.stringify(debugMap, null, 2)}`);
+    }
+    async save5(doc: SheetDocument<T>): Promise<SheetDocument<T>> {
+        const sheetName = Reflect.getMetadata(SHEETS_TABLE_NAME, this.entityClass);
+
+        // Mantenemos la lógica de detección de nuevo (basada en el estado interno)
+        const isNewDocument = (typeof doc.isNew === 'function') ? doc.isNew() : (doc as any)._isNew;
+
+        // 1. 🔑 AUTO-GENERACIÓN DE IDENTIFICADORES
+        if (isNewDocument) {
+            const details = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, this.entityClass) || {};
+
+            for (const [propName, config] of Object.entries(details)) {
+                const columnConfig = config as any;
+
+                if (columnConfig?.generated && !(doc as any)[propName]) {
+                    if (columnConfig.generated === 'uuid') {
+                        (doc as any)[propName] = IdGenerator.generate();
+                    } else if (columnConfig.generated === 'short-id') {
+                        (doc as any)[propName] = IdGenerator.generateShort();
+                    }
+                }
+            }
+        }
+
+        // 2. Mapeo estructural
+        const colMap = this.metadataRegistry.getColumnMap(this.entityClass);
+        const row = new Array(Object.keys(colMap).length).fill('');
+
+        for (const [propName, index] of Object.entries(colMap)) {
+            row[index] = (doc as any)[propName] ?? '';
+        }
+
+        this.logger.debug(`[Save] Persistiendo fila: ${JSON.stringify(row)}`);
+
+        try {
+            // 🌟 REFACTOR: Uso del Symbol para obtener la fila física
+            const rowIndex = (doc as any)[ROW_INDEX_SYMBOL];
+
+            const assignedRowNumber = isNewDocument
+                ? await this.gateway.appendRow(sheetName, row)
+                : await this.gateway.updateRow(sheetName, rowIndex, row);
+
+            // Sellar el documento en memoria
+            doc.markAsSaved(assignedRowNumber);
+
+            return doc;
+        } catch (error: any) {
+            this.logger.error(`[Save] Error en ${sheetName}: ${error.message}`);
+            throw error;
+        }
     }
 
 
@@ -276,7 +344,7 @@ export class SheetsRepository<T extends object> {
     /**
      * Inserta un nuevo registro en Google Sheets.
      */
-    async create(data: Partial<T>): Promise<T> {
+    async create(data: Partial<T>): Promise<SheetDocument<T>> {
         const spreadsheetId = this.optionsDatabase.SPREADSHEET_ID;
 
         // 1. Generar PK automáticamente si no viene dada
@@ -298,6 +366,7 @@ export class SheetsRepository<T extends object> {
 
         // 2. Aplicar validación de Joi dinámica basada en metadatos
         itemToSave = this.validateWithJoi(itemToSave);
+
 
         // 3. Serializar objetos complejos (json, array) y mapear a arreglo plano posicional
         const flatRow = this.headers.map(header => {
@@ -326,8 +395,20 @@ export class SheetsRepository<T extends object> {
             const rowMatch = updatedRange.match(/!A(\d+):/);
             const rowNumber = rowMatch ? parseInt(rowMatch[1], 10) : undefined;
 
-            itemToSave.__row = rowNumber;
-            return itemToSave;
+            // 1. Instanciamos la clase de la entidad
+            const entityInstance = new this.entityClass();
+
+            // 2. Hidratamos la instancia con los datos guardados
+            // (Podrías usar tu hydrator aquí o Object.assign)
+            Object.assign(entityInstance, itemToSave);
+            (entityInstance as any)[ROW_INDEX_SYMBOL] = rowNumber; // Inyectamos la fila real
+
+            // 3. Envolvemos en SheetDocument
+            const doc = new SheetDocument(entityInstance, this);
+            doc.markAsSaved(rowNumber);
+
+            // 4. Retornamos el Documento (¡con getters!)
+            return doc;
         } catch (error) {
             this.logger.error(`❌ Error al crear en "${this.sheetName}": ${error.message}`);
             throw error;
@@ -337,7 +418,7 @@ export class SheetsRepository<T extends object> {
     /**
      * Actualiza un registro existente.
      */
-    async update(
+    /*async update(
         id: string,
         data: Partial<T>,
         options?: { rowNumber?: number }
@@ -412,12 +493,12 @@ export class SheetsRepository<T extends object> {
             this.logger.error(`❌ Error al actualizar en "${this.sheetName}": ${error.message}`);
             throw error;
         }
-    }
+    }*/
 
     /**
      * Realiza un Soft Delete (marcar borrado lógico) o Hard Delete (limpieza física).
      */
-    async delete(id: string): Promise<boolean> {
+    /*async delete(id: string): Promise<boolean> {
         const spreadsheetId = this.optionsDatabase.SPREADSHEET_ID;
         const pkField = this.getPrimaryKeyField();
 
@@ -452,7 +533,7 @@ export class SheetsRepository<T extends object> {
     /**
      * Mongoose-Style: Busca un registro y lo actualiza.
      */
-    async findOneAndUpdate(
+    /*async findOneAndUpdate(
         filter: FilterQuery<T>,
         update: any,
         options?: UpdateOptions
@@ -485,7 +566,7 @@ export class SheetsRepository<T extends object> {
         const updated = await this.update(id, updatePayload, { rowNumber });
 
         return options?.new !== false ? updated : found;
-    }
+    }*/
 
     /**
      * Método RECURSIVO: Resuelve relaciones @SubCollection inyectando y consultando otros repositorios.

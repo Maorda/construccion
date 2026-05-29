@@ -1,6 +1,7 @@
 import { Column } from "@sheetOdm/decorators/column.decorator";
 import { PrimaryKey } from "@sheetOdm/decorators/primarykey.decorator";
 import { Table } from "@sheetOdm/decorators/table.decorator";
+import { VirtualProperty } from "@sheetOdm/decorators/virtual-property.decorator";
 import { IsString, IsNotEmpty, IsNumber, IsOptional } from "class-validator";
 
 
@@ -130,6 +131,7 @@ export class DetallePlanillaEntity {
      * 💡 Bolsa de Horas Extras Consolidada (Regla 5 y Regla 8)
      * Une las extras de la semana + las horas de días incompletos + el arrastre anterior
      */
+    @VirtualProperty({ group: 'calculos' })
     get bolsaTotalHorasExtras(): number {
         return Number(
             (this.horasExtrasPuraAcumuladas + this.horasIncompletasABolsa + this.arrastreHorasExtraAnterior).toFixed(2)
@@ -139,6 +141,7 @@ export class DetallePlanillaEntity {
     /**
      * Descuento monetario por tardanzas (Mapeado a valor de Hora Normal)
      */
+    @VirtualProperty({ group: 'calculos' })
     get descuentoPorTardanzas(): number {
         const horasTardanza = this.minutosTardanzaTotal / 60;
         return Number((horasTardanza * this.costoHN).toFixed(2));
@@ -147,6 +150,7 @@ export class DetallePlanillaEntity {
     /**
      * Cálculo de Ingresos Brutos por la Jornada Completa Normada
      */
+    @VirtualProperty({ group: 'calculos' })
     get montoJornadaNormal(): number {
         return Number((this.horasJornadaCompletaAcumuladas * this.costoHN).toFixed(2));
     }
@@ -154,6 +158,7 @@ export class DetallePlanillaEntity {
     /**
      * Cálculo de Ingresos Brutos por la Bolsa de Horas Extras
      */
+    @VirtualProperty({ group: 'calculos' })
     get montoHorasExtrasBolsa(): number {
         // Si el saldo de la bolsa es positivo, se liquida económicamente
         if (this.bolsaTotalHorasExtras > 0) {
@@ -165,6 +170,7 @@ export class DetallePlanillaEntity {
     /**
      * Líquido Neto Teórico que le corresponde ganar al Obrero en la semana
      */
+    @VirtualProperty({ group: 'calculos' })
     get salarioNetoCalculado(): number {
         const ingresos = this.montoJornadaNormal + this.montoHorasExtrasBolsa + this.arrastreEfectivoAnterior;
         const egresos = this.descuentoPorTardanzas + this.totalAdelantosSemana;
@@ -176,6 +182,7 @@ export class DetallePlanillaEntity {
      * 💡 REGLA 6 y 7: Saldo Financiero Remanente que se va a heredar a la próxima semana
      * Si no hubo sencillo de baja denominación o si el obrero pidió saldo adelantado.
      */
+    @VirtualProperty({ group: 'calculos' })
     get saldoEfectivoPendienteProximaSemana(): number {
         // Lo que debió ganar menos lo que efectivamente se le pudo pagar físicamente en la mesa de la obra
         return Number((this.salarioNetoCalculado - this.efectivoPagadoEnMano).toFixed(2));
@@ -185,6 +192,7 @@ export class DetallePlanillaEntity {
      * 💡 REGLA 8: Deuda de Horas que pasa a la siguiente semana
      * Si la bolsa consolidada quedó en negativo, se arrastra como deuda de tiempo.
      */
+    @VirtualProperty({ group: 'calculos' })
     get deudaHorasProximaSemana(): number {
         return this.bolsaTotalHorasExtras < 0 ? Number(this.bolsaTotalHorasExtras.toFixed(2)) : 0;
     }

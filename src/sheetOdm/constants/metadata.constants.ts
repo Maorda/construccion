@@ -27,3 +27,5 @@ export const SHEETS_VIRTUALS = Symbol('sheets:virtuals');
 export const SHEETS_SUB_COLLECTIONS = Symbol('sheets:sub_collections');
 export const SHEETS_REPOSITORY_MARKER = Symbol.for('__isSheetsRepository');
 export const SHEETS_DTO = Symbol('sheets:dto');
+export const ROW_INDEX_SYMBOL = Symbol('__row');
+export const SHEETS_VIRTUAL_COLUMNS = Symbol('SHEETS_VIRTUAL_COLUMNS');

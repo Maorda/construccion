@@ -13,6 +13,7 @@ import {
 
 @Injectable()
 export class MetadataRegistry {
+    private static cache = new Map<Function, any>();
     private static registeredEntities = new Set<Function>();
     /**
      * Obtiene el nombre de la propiedad TS (ej: 'id' o 'dni') marcada como PK.
@@ -37,7 +38,14 @@ export class MetadataRegistry {
      */
     getColumnDetails(target: Function): Record<string, ColumnOptions> {
         const targetClass = typeof target === 'function' ? target : (target as any).constructor;
-        return Reflect.getMetadata(SHEETS_COLUMN_DETAILS, targetClass) || {};
+
+        if (MetadataRegistry.cache.has(targetClass)) {
+            return MetadataRegistry.cache.get(targetClass);
+        }
+
+        const details = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, targetClass) || {};
+        MetadataRegistry.cache.set(targetClass, details);
+        return details;
     }
 
     /**
