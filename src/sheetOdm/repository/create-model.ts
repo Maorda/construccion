@@ -1,9 +1,10 @@
 import { SHEETS_COLUMN_DETAILS, SHEETS_COLUMN_LIST } from '@sheetOdm/constants/metadata.constants';
 import { ROW_INDEX_SYMBOL } from '@sheetOdm/constants/metadata.constants'; // <-- Importación necesaria
 import { SheetsRepository } from './sheets.repository';
-import { ClassType, FilterQuery } from '@sheetOdm/types/query.types';
-import { deepClone, SheetDocument } from '@sheetOdm/wrapper/sheet.document';
+import { ClassType, FilterQuery, QueryOptions } from '@sheetOdm/types/query.types';
+import { deepClone } from '@sheetOdm/wrapper/sheet.document1';
 import { Inject, Logger } from '@nestjs/common';
+import { SheetDocument } from '@sheetOdm/wrapper/sheetdocument';
 
 export const InjectModel = (entity: Function) => Inject(`${entity.name}Model`);
 
@@ -13,15 +14,22 @@ export type Model<T extends object> = {
 
     // Métodos estáticos (Query Engine)
     save(data: Partial<T>): Promise<T & SheetDocument<T>>;
-    find(filter?: FilterQuery<T>, options?: any): Promise<Partial<T>[]>;
+    find(filter?: FilterQuery<T>, options?: QueryOptions<T>): Promise<SheetDocument<T>[]>;
     // findOne(filter?: FilterQuery<T>, projection?: any): Promise<Partial<T> | null>;
     //findOneAndUpdate(filter: FilterQuery<T>, update: any, options?: any): Promise<Partial<T> | null>;
+    /**
+     * 🚀 ACCIÓN DIRECTA DE STAGES: 
+     * Permite ejecutar pipelines de stages analíticos personalizados en memoria ($match, $group, $sort).
+     */
+    aggregate<R = any>(pipeline: any[]): Promise<R[]>;
 };
 
 export function createModel<T extends object>(
     entityClass: ClassType<T>,
     repo: SheetsRepository<T>
 ): Model<T> {
+    const logger = new Logger(`Model[${entityClass.name}]`);
+
     const ModelClass = class extends SheetDocument<T> {
         constructor(data?: Partial<T>) {
             // 1. Pasamos un objeto vacío inicial seguro al padre
@@ -76,19 +84,25 @@ export function createModel<T extends object>(
     }
 
     // --- MÉTODOS ESTÁTICOS ---
-    (ModelClass as any).find = (filter: FilterQuery<T>, options?: any) =>
-        repo.find(filter, options);
+    (ModelClass as any).find = (filter: FilterQuery<T>, options?: QueryOptions<T>) =>
+        repo.find(filter, { ...options, customConstructor: ModelClass } as any);
 
-    // 2. Vinculamos FIND ONE (Necesario)
-    /* (ModelClass as any).findOne = (filter: FilterQuery<T>, projection?: any) =>
-         repo.findOne(filter, projection);
- 
-     // 3. Vinculamos FIND ONE AND UPDATE (Necesario)
-     (ModelClass as any).findOneAndUpdate = (filter: FilterQuery<T>, update: any, options?: any) =>
-         repo.findOneAndUpdate(filter, update, options);
-*/
+    (ModelClass as any).findOne = (filter: FilterQuery<T>, options?: any) =>
+        repo.findOne(filter, { ...options, customConstructor: ModelClass } as any);
+
+    (ModelClass as any).findOneAndUpdate = (filter: FilterQuery<T>, update: any, options?: any) =>
+        (repo as any).findOneAndUpdate(filter, update, { ...options, customConstructor: ModelClass });
+
+    // 3. Vinculamos FIND ONE AND UPDATE (Necesario)
+    /*(ModelClass as any).findOneAndUpdate = (filter: FilterQuery<T>, update: any, options?: any) =>
+        repo.findOneAndUpdate(filter, update, options);*/
+
     // 4. Implementamos el estático "SAVE" (o "CREATE")
     // Nota: Es mejor llamarlo "create" para no confundirlo con la instancia .save()
+    (ModelClass as any).aggregate = (pipeline: any[]) =>
+        repo.aggregate(pipeline);
+
+    // Fábrica estática rápida de persistencia
     (ModelClass as any).save = async (data: Partial<T>) => {
         const instance = new ModelClass(data);
         return await instance.save();

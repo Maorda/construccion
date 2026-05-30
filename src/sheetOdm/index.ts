@@ -21,7 +21,7 @@ export * from './services/metadata-registry.service';
 export * from './repository/sheets.repository';
 export * from './repository/sheets-repository.factory';
 export * from './repository/create-model';
-export * from './wrapper/sheet.document';
+export * from './wrapper/sheet.document1';
 
 // 6. Estrategia de Nombres
 export * from './strategy/naming.strategy';

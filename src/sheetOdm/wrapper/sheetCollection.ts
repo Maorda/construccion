@@ -18,7 +18,7 @@ export function deepClone<T>(obj: T): T {
     return obj;
 }
 
-export class SheetDocument<T extends object> {
+export class SheetCollection<T extends object> {
     [key: string]: any;
 
     // Ya no es pública. Se accede mediante el Symbol para evitar colisiones y polución
@@ -107,7 +107,7 @@ export class SheetDocument<T extends object> {
         return jsonObj;
     }
     async save(): Promise<this> {
-        return await this._repo.save5(this) as this;
+        return await this._repo.save(this) as this;
     }
 
     markAsSaved(rowNumber?: number): void {

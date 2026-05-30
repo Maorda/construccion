@@ -2,6 +2,8 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ISheetDriver } from '@sheetOdm/core/interfaces/sheet-driver.interface';
 import { GoogleAutenticarService } from '@sheetOdm/services/auth.google.service';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
+import { ClassType } from '@sheetOdm/types/query.types';
 
 
 @Injectable()
@@ -10,7 +12,8 @@ export class SheetDataGateway implements ISheetDriver {
 
     constructor(
         private readonly auth: GoogleAutenticarService,
-        @Inject('SPREADSHEET_ID') private readonly spreadsheetId: string
+        @Inject('SPREADSHEET_ID') private readonly spreadsheetId: string,
+        private readonly metadataRegistry: MetadataRegistry,
     ) { }
 
     // Acciones de infraestructura pura
@@ -99,4 +102,14 @@ export class SheetDataGateway implements ISheetDriver {
             throw error;
         }
     }
+
+    getDocId<T extends object>(entityClass: ClassType<T>, rowData: any[]): any {
+        const pkField = this.metadataRegistry.getPrimaryKeyField(entityClass);
+        const columnMap = this.metadataRegistry.getColumnMap(entityClass);
+        const index = columnMap[pkField];
+
+        // Aquí usas los metadatos y los datos crudos
+        return rowData[index];
+    }
+
 }

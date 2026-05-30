@@ -1,14 +1,15 @@
-// @database/engines/sheet-document.hydrator.ts
 import { Injectable, Logger } from "@nestjs/common";
 import { SheetsRepository } from "@sheetOdm/repository/sheets.repository";
 import { ClassType } from "@sheetOdm/types/query.types";
-import { SheetDocument } from "@sheetOdm/wrapper/sheet.document";
+import { SheetDocument } from "@sheetOdm/wrapper/sheet.document1";
 import { ROW_INDEX_SYMBOL, SHEETS_COLUMN_DETAILS } from '@sheetOdm/constants/metadata.constants';
 import { randomUUID } from "crypto"; // 🔥 Generador nativo de Node.js
 
 export interface HydratorOptions {
     new?: boolean;
     oldDataFlat?: any;
+    // 🔥 SOLUCIÓN AL ERROR DE TIPADO: Registramos el constructor dinámico del Modelo
+    customConstructor?: ClassType<any>;
 }
 
 export interface ISheetDocumentHydrator {
@@ -39,7 +40,6 @@ export class SheetDocumentHydrator implements ISheetDocumentHydrator {
                 : rawData;
 
             // 2. 🌟 DETECCIÓN DINÁMICA DE NOVEDAD usando el Symbol
-            // Si el Symbol es undefined, significa que no tiene fila física, por tanto es nuevo.
             const isNewDoc = options.new !== undefined
                 ? options.new
                 : (dataToProcess[ROW_INDEX_SYMBOL] === undefined);
@@ -52,6 +52,12 @@ export class SheetDocumentHydrator implements ISheetDocumentHydrator {
             const instance = new entityClass();
             Object.assign(instance, dataToProcess);
 
+            // 🛡️ BLINDAJE ANTI-PÉRDIDA: Object.assign omite Symbols si no son enumerables. 
+            // Forzamos el traspaso manual del puntero de fila física a la instancia base.
+            if (dataToProcess[ROW_INDEX_SYMBOL] !== undefined) {
+                (instance as any)[ROW_INDEX_SYMBOL] = dataToProcess[ROW_INDEX_SYMBOL];
+            }
+
             // 5. 🔑 AUTO-GENERACIÓN DE UUID
             if (isNewDoc) {
                 for (const [propName, config] of Object.entries(details)) {
@@ -61,10 +67,18 @@ export class SheetDocumentHydrator implements ISheetDocumentHydrator {
                 }
             }
 
-            // 6. Instanciar el documento vivo
-            const hydratedDoc = new SheetDocument<T>(instance as T, repository, isNewDoc);
+            // 6. 🔄 INSTANCIACIÓN VIRTUAL PROTOTÍPICA (Estilo Mongoose)
+            // Si viene un constructor personalizado (el Modelo dinámico), lo instanciamos directamente.
+            // De lo contrario, cae en el wrapper estándar SheetDocument.
+            const TargetConstructor = options.customConstructor || SheetDocument;
+            const hydratedDoc = new TargetConstructor(instance as T, repository, isNewDoc) as SheetDocument<T>;
 
             (hydratedDoc as any)._entityClass = entityClass;
+
+            // Aseguramos que el documento vivo también mantenga el símbolo operacional de la fila
+            if ((instance as any)[ROW_INDEX_SYMBOL] !== undefined) {
+                (hydratedDoc as any)[ROW_INDEX_SYMBOL] = (instance as any)[ROW_INDEX_SYMBOL];
+            }
 
             // 7. 📈 VINCULACIÓN DINÁMICA DE VIRTUAL GETTERS
             const descriptors = Object.getOwnPropertyDescriptors(targetPrototype);
@@ -82,9 +96,9 @@ export class SheetDocumentHydrator implements ISheetDocumentHydrator {
             }
 
             // 8. 🛡️ BYPASS TRANSACCIONAL ANTI-VACIADO
-            if (!hydratedDoc || Object.keys(hydratedDoc).length === 0) {
-                this.logger.warn(`[Hydrator] ⚠️ ¡ALERTA! El documento de [${entityClass.name}] quedó vacío. Aplicando bypass plano.`);
-                return dataToProcess as any;
+            if (!hydratedDoc || (Object.keys(hydratedDoc).length === 0 && !(hydratedDoc instanceof SheetDocument))) {
+                this.logger.error(`[Hydrator] ❌ Error catastrófico: No se pudo generar una instancia válida de SheetDocument.`);
+                throw new Error(`Instanciación fallida para la entidad ${entityClass.name}`);
             }
 
             // 9. 🛡️ SERIALIZADOR TOTAL (Columnas + Virtuals + Control de fila)
@@ -119,7 +133,8 @@ export class SheetDocumentHydrator implements ISheetDocumentHydrator {
             return hydratedDoc;
 
         } catch (error: any) {
-            this.logger.error(`[Hydrator] ❌ Error crítico hidratando documento: ${error.message}`);
+            // Log enriquecido para facilitar la depuración en producción
+            this.logger.error(`[Hydrator] ❌ Error crítico hidratando la entidad "${entityClass.name}": ${error.message}`);
             throw error;
         }
     }

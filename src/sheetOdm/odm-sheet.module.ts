@@ -3,6 +3,7 @@ import { DiscoveryModule, APP_INTERCEPTOR, ModuleRef } from '@nestjs/core';
 import { HttpModule } from '@nestjs/axios';
 import { CacheModule, CacheInterceptor } from '@nestjs/cache-manager';
 
+
 import { GoogleAutenticarService } from '@sheetOdm/services/auth.google.service';
 import { GoogleHealthService } from '@sheetOdm/services/google-health.service';
 import { DatabaseConfigService } from '@sheetOdm/services/database-config.service';
@@ -141,18 +142,25 @@ export class OdmSheetModule {
                 // 1. EL REPOSITORIO: Delegamos el instanciamiento a la fábrica
                 {
                     provide: REPO_TOKEN,
-                    useFactory: (googleSheets: GoogleAutenticarService,
+                    useFactory: <T extends Object>(
+                        entityClass: ClassType,
                         metadataRegistry: MetadataRegistry,
-                        queryEngine: QueryEngine,
-                        optionsDatabase: DatabaseModuleOptions,
+                        queryEngine: QueryEngine<T>,
                         gateway: SheetDataGateway,
                         relationManager: RelationManager,
                         dataMapper: DataMapper,
-                        moduleRef: ModuleRef) => {
+                        moduleRef: ModuleRef,
+                        hydrator: SheetDocumentHydrator,) => {
                         // Llamas a tu builder limpio
                         return SheetsRepositoryBuilder.build(
-                            Entity, googleSheets, metadataRegistry, queryEngine,
-                            optionsDatabase, gateway, relationManager, dataMapper, moduleRef
+                            entityClass,
+                            metadataRegistry,
+                            queryEngine,
+                            gateway,
+                            relationManager,
+                            dataMapper,
+                            moduleRef,
+                            hydrator
                         );
                     },
                     inject: [GoogleAutenticarService,

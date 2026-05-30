@@ -8,83 +8,100 @@ import {
     SHEETS_ALL_RELATIONS,
     SHEETS_COLUMN_LIST,
     SHEETS_DELETE_CONTROL,
-    SHEETS_RELATIONS_LIST
+    SHEETS_RELATIONS_LIST,
+    SHEETS_TABLE_NAME
 } from '@sheetOdm/constants/metadata.constants';
+import { ClassType } from '@sheetOdm/types/query.types';
+
+interface EntitySchema {
+    sheetName: string;
+    primaryKey: string;
+    primaryKeyColumnName: string;
+    columns: Record<string, ColumnOptions>;
+    columnList: string[];
+    deleteControl: string | null;
+    relations: string[];
+}
 
 @Injectable()
 export class MetadataRegistry {
-    private static cache = new Map<Function, any>();
-    private static registeredEntities = new Set<Function>();
-    /**
-     * Obtiene el nombre de la propiedad TS (ej: 'id' o 'dni') marcada como PK.
-     * Se busca directamente en la clase constructora.
-     */
-    getPrimaryKeyField(entityClass: any): string {
-        const targetClass = typeof entityClass === 'function' ? entityClass : entityClass.constructor;
-        return Reflect.getMetadata(SHEETS_PRIMARY_KEY, targetClass) || 'null';
-    }
+    private readonly schemaCache = new Map<Function, EntitySchema>();
+    private static readonly registeredEntitiesStore = new Set<ClassType<any>>();
 
     /**
-     * Obtiene el nombre real de la cabecera en Google Sheets para la PK.
+     * Centralizador: Construye el esquema completo solo la primera vez.
      */
-    getPrimaryKeySheetName(entityClass: any): string {
-        const targetClass = typeof entityClass === 'function' ? entityClass : entityClass.constructor;
-        return getPrimaryKeyColumnName(targetClass) || 'id';
-    }
+    private ensureMetadata(entityClass: ClassType<any>): EntitySchema {
+        if (!this.schemaCache.has(entityClass)) {
+            const proto = entityClass.prototype;
 
-    /**
-     * Obtiene la configuración de todas las columnas.
-     * Lee directamente del mapa centralizado guardado en el Constructor de la Clase.
-     */
-    getColumnDetails(target: Function): Record<string, ColumnOptions> {
-        const targetClass = typeof target === 'function' ? target : (target as any).constructor;
+            // Aquí "compilas" la metadata una única vez
+            const schema: EntitySchema = {
+                sheetName: Reflect.getMetadata(SHEETS_TABLE_NAME, entityClass) || entityClass.name.toUpperCase(),
+                primaryKey: Reflect.getMetadata(SHEETS_PRIMARY_KEY, entityClass) || 'id',
+                primaryKeyColumnName: getPrimaryKeyColumnName(entityClass) || 'ID',
+                columns: Reflect.getMetadata(SHEETS_COLUMN_DETAILS, entityClass) || {},
+                columnList: Reflect.getMetadata(SHEETS_COLUMN_LIST, entityClass) || [],
+                deleteControl: Reflect.getMetadata(SHEETS_DELETE_CONTROL, entityClass) || null,
+                relations: Reflect.getMetadata(SHEETS_RELATIONS_LIST, proto) || []
+            };
 
-        if (MetadataRegistry.cache.has(targetClass)) {
-            return MetadataRegistry.cache.get(targetClass);
+            this.schemaCache.set(entityClass, schema);
         }
-
-        const details = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, targetClass) || {};
-        MetadataRegistry.cache.set(targetClass, details);
-        return details;
+        return this.schemaCache.get(entityClass)!;
     }
 
-    /**
-     * Obtiene las opciones de una columna específica por su path jerárquico.
-     */
-    getColumnOptions(target: any, path: string): ColumnOptions | undefined {
-        if (!target || !path) return undefined;
+    // --- MÉTODOS PÚBLICOS (Ahora son lecturas instantáneas de memoria) ---
 
-        const targetClass = typeof target === 'function' ? target : target.constructor;
-        const details = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, targetClass) || {};
-
-        if (!path.includes('.')) {
-            return details[path];
-        }
-
-        return this.resolveDeepMetadata(targetClass, path.split('.'));
+    getPrimaryKeyField<T extends object>(entityClass: ClassType<T>): string {
+        return this.ensureMetadata(entityClass).primaryKey;
     }
 
-    /**
-     * Resuelve metadatos navegando por las relaciones @SubCollection / @Relation
-     */
-    private resolveDeepMetadata(targetClass: any, parts: string[]): ColumnOptions | undefined {
+    getPrimaryKeySheetName<T extends object>(entityClass: ClassType<T>): string {
+        return this.ensureMetadata(entityClass).primaryKeyColumnName;
+    }
+
+    getColumnDetails<T extends object>(entityClass: ClassType<T>): Record<string, ColumnOptions> {
+        return this.ensureMetadata(entityClass).columns;
+    }
+
+    getColumnMap<T extends object>(entityClass: ClassType<T>): Record<string, number> {
+        const schema = this.ensureMetadata(entityClass);
+        const map: Record<string, number> = {};
+        schema.columnList.forEach((colName, index) => {
+            map[colName] = index;
+        });
+        return map;
+    }
+
+    getDeleteControlProperty<T extends object>(entityClass: ClassType<T>): string | null {
+        return this.ensureMetadata(entityClass).deleteControl;
+    }
+
+    getRelationsList<T extends object>(entityClass: ClassType<T>): string[] {
+        return this.ensureMetadata(entityClass).relations;
+    }
+
+    // --- Métodos que requieren lógica dinámica (No se pueden cachear estáticamente) ---
+
+    getColumnOptions<T extends object>(entityClass: ClassType<T>, path: string): ColumnOptions | undefined {
+        const details = this.getColumnDetails(entityClass);
+        if (!path.includes('.')) return details[path];
+        return this.resolveDeepMetadata(entityClass, path.split('.'));
+    }
+
+    private resolveDeepMetadata(targetClass: ClassType<any>, parts: string[]): ColumnOptions | undefined {
         let currentTarget = targetClass;
-
         for (let i = 0; i < parts.length; i++) {
             const part = parts[i];
-            const isLast = i === parts.length - 1;
+            const details = this.getColumnDetails(currentTarget);
+            if (i === parts.length - 1) return details[part];
 
-            const details = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, currentTarget) || {};
+            const relOptions = Reflect.getMetadata(SHEETS_ALL_RELATIONS, currentTarget.prototype, part) ||
+                Reflect.getMetadata(SHEETS_ALL_RELATIONS, currentTarget, part);
 
-            if (isLast) {
-                return details[part];
-            }
-
-            // Las relaciones se guardan en el prototipo de la propiedad
-            const relOptions = Reflect.getMetadata(SHEETS_ALL_RELATIONS, currentTarget.prototype, part);
-
-            if (relOptions && relOptions.targetEntity) {
-                currentTarget = relOptions.targetEntity(); // Saltamos a la clase constructora destino
+            if (relOptions?.targetEntity) {
+                currentTarget = relOptions.targetEntity();
             } else {
                 return undefined;
             }
@@ -92,64 +109,18 @@ export class MetadataRegistry {
         return undefined;
     }
 
-    /**
-     * Genera dinámicamente el mapa de índices posicionales { propertyName: columnIndex }
-     * basándose en la lista ordenada real generada por el decorador @Column.
-     */
-    getColumnMap(entityClass: any): Record<string, number> {
-        const targetClass = typeof entityClass === 'function' ? entityClass : entityClass.constructor;
-        const orderedColumns: string[] = Reflect.getMetadata(SHEETS_COLUMN_LIST, targetClass) || [];
-
-        const map: Record<string, number> = {};
-        orderedColumns.forEach((colName, index) => {
-            map[colName] = index;
-        });
-
-        return map;
+    getRelationOptions<T extends object>(entityClass: ClassType<T>, relationName: string): any {
+        return Reflect.getMetadata(SHEETS_ALL_RELATIONS, entityClass.prototype, relationName) ||
+            Reflect.getMetadata(SHEETS_ALL_RELATIONS, entityClass, relationName);
     }
 
-    /**
-     * Obtiene el nombre de la propiedad usada para el Soft Delete (Control de Borrado).
-     */
-    getDeleteControlProperty(entityClass: any): string | null {
-        const targetClass = typeof entityClass === 'function' ? entityClass : entityClass.constructor;
-        return Reflect.getMetadata(SHEETS_DELETE_CONTROL, targetClass) || null;
+    // --- Registro Estático ---
+    static register(target: ClassType<any>): void {
+        this.registeredEntitiesStore.add(target);
     }
 
-    /**
-     * Obtiene la lista de todas las propiedades marcadas como relaciones (@SubCollection).
-     */
-    getRelationsList(entityClass: any): string[] {
-        const targetClass = typeof entityClass === 'function' ? entityClass : entityClass.constructor;
-        return Reflect.getMetadata(SHEETS_RELATIONS_LIST, targetClass.prototype) || [];
+    static getAllRegisteredEntities(): ClassType<any>[] {
+        return Array.from(this.registeredEntitiesStore);
     }
 
-    /**
-     * Obtiene las opciones específicas de una relación.
-     */
-    getRelationOptions(entityClass: any, relationName: string): any {
-        const targetClass = typeof entityClass === 'function' ? entityClass : entityClass.constructor;
-        return Reflect.getMetadata(SHEETS_ALL_RELATIONS, targetClass.prototype, relationName);
-    }
-
-    // NUEVO: Catálogo interno
-    private registeredEntities = new Set<Function>();
-
-    // NUEVO: Método para que los decoradores se auto-registren
-    registerEntity(entityClass: Function) {
-        this.registeredEntities.add(entityClass);
-    }
-
-    // NUEVO: Método para auditoría
-    getAllRegisteredEntities(): Function[] {
-        return Array.from(this.registeredEntities);
-    }
-
-    static register(target: Function) {
-        this.registeredEntities.add(target);
-    }
-
-    static getAllRegisteredEntities(): Function[] {
-        return Array.from(this.registeredEntities);
-    }
 }

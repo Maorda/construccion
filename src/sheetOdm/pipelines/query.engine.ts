@@ -11,10 +11,24 @@ import { SkipStage } from './stages/skip.stage';
 import { UnwindStage } from './stages/unwind.stage';
 import { ExpressionEngine } from '@sheetOdm/engines/expression.engine';
 import { ProjectionService } from '@sheetOdm/engines/projection.service';
+import { SheetCollection } from '@sheetOdm/wrapper/sheetCollection';
+import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
+import { ROW_INDEX_SYMBOL } from '@sheetOdm/constants/metadata.constants';
+import { ModuleRef } from '@nestjs/core';
+import { getRepositoryToken } from '@sheetOdm/utils/helper';
+import { SheetDocument } from '@sheetOdm/wrapper/sheetdocument';
+import { SheetsRepository } from '@sheetOdm/repository/sheets.repository';
+
 
 @Injectable()
-export class QueryEngine implements IQueryEngine {
+export class QueryEngine<T extends object> implements IQueryEngine {
     private stageRegistry: Map<string, IQueryStage>;
+    // 1. Caché de documentos (Identity Map)
+    private identityMap = new Map<string, SheetCollection<any>>();
+    // 2. Cola de mutaciones (Unit of Work)
+    private readonly unitOfWork = new Set<SheetDocument<T>>();
+
     constructor(
         private readonly match: MatchStage,
         private readonly project: ProjectStage,
@@ -29,6 +43,9 @@ export class QueryEngine implements IQueryEngine {
         // Agrega estos dos
         private readonly expressionEngine: ExpressionEngine,
         private readonly projectionService: ProjectionService,
+        private readonly gateway: SheetDataGateway,
+        private readonly metadata: MetadataRegistry,
+        private readonly moduleRef: ModuleRef
     ) {
         // Registro centralizado
         this.stageRegistry = new Map<string, IQueryStage>([
@@ -106,5 +123,40 @@ export class QueryEngine implements IQueryEngine {
         }
 
         return result;
+    }
+    public track(doc: SheetDocument<any>) {
+        this.identityMap.set(this.getDocId(doc), doc);
+    }
+
+    // Cuando el engine crea un documento, lo "trackea"
+    public createDocument(data: any, entityClass: any, row?: number): SheetDocument<T> {
+        const doc = new SheetDocument(data, entityClass, row);
+        doc.attach({ flush: () => this.flush(doc) });
+        return doc;
+    }
+
+    public markDirty(doc: SheetDocument<any>) {
+        this.unitOfWork.add(doc);
+    }
+
+    async flush(doc: SheetDocument<any>) {
+        // Ahora doc.entityClass existe y TypeScript no se quejará
+        const repoToken = getRepositoryToken(doc.entityClass);
+        const repo = this.moduleRef.get<SheetsRepository<any>>(repoToken);
+
+        if (!repo) {
+            throw new Error(`No se encontró repositorio para la entidad: ${doc.entityClass.name}`);
+        }
+
+        // Pedimos al Repository la fila plana usando el método que definimos anteriormente
+        const flatRow = await repo.serialize(doc);
+
+        if (doc.isNew) {
+            const rowNumber = await repo.gateway.appendRow(repo.sheetName, flatRow);
+            doc.__commit(rowNumber);
+        } else if (doc.isDirty) {
+            await repo.gateway.updateRow(repo.sheetName, doc.rowNumber!, flatRow);
+            doc.__commit();
+        }
     }
 }

@@ -41,14 +41,20 @@ export function Column(options: ColumnOptions = {}): PropertyDecorator {
         const classConstructor = target.constructor;
         const propString = propertyKey.toString();
 
-        // 1. LISTA ESTRUCTURAL ORDENADA (Para indexación posicional de celdas A, B, C...)
-        const columnsList = Reflect.getMetadata(SHEETS_COLUMN_LIST, classConstructor) || [];
+        // 1. SOLUCIÓN AL BUG: Usamos getOwnMetadata y clonamos para evitar mutar al Padre
+        let columnsList = Reflect.getOwnMetadata(SHEETS_COLUMN_LIST, classConstructor);
+        if (!columnsList) {
+            // Si el padre tiene columnas, las heredamos clonando el array
+            const parentColumns = Reflect.getMetadata(SHEETS_COLUMN_LIST, classConstructor) || [];
+            columnsList = [...parentColumns];
+        }
+
         if (!columnsList.includes(propString)) {
             columnsList.push(propString);
             Reflect.defineMetadata(SHEETS_COLUMN_LIST, columnsList, classConstructor);
         }
 
-        // 2. NORMALIZACIÓN ESTRICTA DE OPCIONES
+        // 2. Normalización de la Configuración
         const config: ColumnOptions = {
             name: options.name || propString,
             type: options.type || 'string',
@@ -59,21 +65,18 @@ export function Column(options: ColumnOptions = {}): PropertyDecorator {
             generated: options.generated
         };
 
-        // 3. METADATA INDIVIDUAL POR PROPIEDAD
-        Reflect.defineMetadata(TABLE_COLUMN_KEY, config, target, propertyKey);
-
-        // 4. ACCESO DIRECTO PARA BORRADO LÓGICO (Optimiza búsquedas del motor)
-        if (config.isDeleteControl) {
-            Reflect.defineMetadata(SHEETS_DELETE_CONTROL, propString, classConstructor);
+        // 3. Centralización de detalles en el Constructor (Única fuente de verdad)
+        let details = Reflect.getOwnMetadata(SHEETS_COLUMN_DETAILS, classConstructor);
+        if (!details) {
+            const parentDetails = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, classConstructor) || {};
+            details = { ...parentDetails };
         }
-
-        // 5. MAPA MAESTRO DE DETALLES (Es el búfer unificado que lee el PersistenceEngine)
-        const details = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, classConstructor) || {};
         details[propString] = config;
         Reflect.defineMetadata(SHEETS_COLUMN_DETAILS, details, classConstructor);
-        Reflect.defineMetadata(`column:${String(propertyKey)}`, options.name, target);
-        if (options.type) {
-            Reflect.defineMetadata(`column:type:${String(propertyKey)}`, options.type, target);
+
+        // 4. Optimizador de accesos rápidos
+        if (config.isDeleteControl) {
+            Reflect.defineMetadata(SHEETS_DELETE_CONTROL, propString, classConstructor);
         }
     };
 }

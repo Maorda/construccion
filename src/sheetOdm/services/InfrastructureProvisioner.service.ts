@@ -2,6 +2,7 @@ import { Injectable, Logger, OnApplicationBootstrap, OnModuleInit } from '@nestj
 import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
 import { SHEETS_DTO, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants';
 import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
+import { ClassType } from '@sheetOdm/types/query.types';
 
 
 @Injectable()
@@ -17,35 +18,55 @@ export class InfrastructureProvisioner implements OnApplicationBootstrap {
     async onApplicationBootstrap() {
         await this.syncSchema();
     }
-
     async syncSchema() {
         const entities = MetadataRegistry.getAllRegisteredEntities();
         const existingSheets = await this.gateway.getExistingSheetTitles();
 
         for (const entity of entities) {
-            // --- 1. CAPA DE VALIDACIÓN (NUEVO) ---
+            // --- 1. CAPA DE VALIDACIÓN DTO vs ENTIDAD ---
             const dto = Reflect.getMetadata(SHEETS_DTO, entity);
             if (!dto) {
                 throw new Error(`❌ Error: La entidad ${entity.name} no tiene un DTO vinculado. Por favor, define { dto: TuDto } en @Table.`);
             }
 
-            // Ejecutamos la validación de consistencia antes de tocar cualquier sheet
             this.validateSchemaConsistency(entity, dto);
 
-            // --- 2. LÓGICA EXISTENTE ---
-            const sheetName = Reflect.getMetadata(SHEETS_TABLE_NAME, entity);
+            // --- 2. CONTROL DE INFRAESTRUCTURA PURA VÍA GATEWAY ---
+            const sheetName = (Reflect.getMetadata(SHEETS_TABLE_NAME, entity) || entity.name).toUpperCase();
+            const definedHeaders = this.getHeadersForEntity(entity);
 
-            if (!existingSheets.includes(sheetName)) {
+            const sheetExists = existingSheets.map(s => s.toUpperCase()).includes(sheetName);
+
+            if (!sheetExists) {
+                this.logger.log(`📡 Creando pestaña nueva: "${sheetName}"`);
                 await this.gateway.createSheet(sheetName);
-            }
 
-            // Provisionamos cabeceras usando el Gateway
-            const headers = this.getHeadersForEntity(entity);
-            await this.gateway.writeHeaders(sheetName, headers);
+                // Escribir cabeceras usando el método nativo del Gateway
+                await this.gateway.writeHeaders(sheetName, definedHeaders);
+                this.logger.log(`✅ Pestaña "${sheetName}" creada con cabeceras: [${definedHeaders.join(', ')}]`);
+            } else {
+                // Leer la primera fila de manera segura usando la abstracción del Gateway
+                const actualRows = await this.gateway.getRange(`${sheetName}!A1:Z1`);
+                const currentHeaders = actualRows[0]
+                    ? actualRows[0].map((h: any) => String(h).trim().toUpperCase())
+                    : [];
+
+                // Detectar si el programador añadió nuevas columnas en el código de la Entidad
+                const missingHeaders = definedHeaders.filter(h => !currentHeaders.includes(h.toUpperCase()));
+
+                if (missingHeaders.length > 0) {
+                    this.logger.log(`🔄 Auto-migración en "${sheetName}": Anexando columnas detectadas [${missingHeaders.join(', ')}]`);
+                    const finalHeaders = [...currentHeaders, ...missingHeaders];
+
+                    // Reutilizamos writeHeaders del Gateway para actualizar la fila A1 con el nuevo Layout extendido
+                    await this.gateway.writeHeaders(sheetName, finalHeaders);
+                    this.logger.log(`✅ Estructura de "${sheetName}" sincronizada con éxito.`);
+                }
+            }
         }
     }
 
-    private validateSchemaConsistency(entity: Function, dto: Function) {
+    private validateSchemaConsistency(entity: ClassType, dto: ClassType) {
         const colDetails = this.registry.getColumnDetails(entity);
         const dtoInstance = new (dto as any)();
         const dtoFields = Object.getOwnPropertyNames(dtoInstance);
@@ -55,19 +76,15 @@ export class InfrastructureProvisioner implements OnApplicationBootstrap {
             if (!dtoFields.includes(field)) {
                 throw new Error(
                     `❌ [ODM Error] La entidad '${entity.name}' define la columna '${field}', ` +
-                    `pero no existe en el DTO '${dto.name}'. Asegúrate de exponer todos los campos necesarios.`
+                    `pero no existe en el DTO '${dto.name}'.`
                 );
             }
-            // 1. Error crítico: Propiedad en DTO sin mapeo en Entidad
             if (!colDetails[field]) {
                 throw new Error(
-                    `❌ [ODM Error] La propiedad '${field}' existe en el DTO '${dto.name}' ` +
-                    `pero no está mapeada con @Column en la entidad '${entity.name}'. ` +
-                    `Debes añadir @Column en la entidad para permitir este campo.`
+                    `❌ [ODM Error] La propiedad '${field}' existe en el DTO '${dto.name}' pero no tiene @Column.`
                 );
             }
 
-            // 2. Error crítico: Mismatch de tipos
             const dtoFieldType = Reflect.getMetadata('design:type', dto.prototype, field);
             const entityColumnType = colDetails[field].type;
 
@@ -75,20 +92,21 @@ export class InfrastructureProvisioner implements OnApplicationBootstrap {
                 const dtoTypeName = dtoFieldType.name.toLowerCase();
                 if (entityColumnType !== dtoTypeName) {
                     throw new Error(
-                        `❌ [ODM Error] Inconsistencia de tipo en '${field}'. ` +
-                        `El DTO espera '${dtoTypeName}', pero la entidad '${entity.name}' ` +
-                        `lo tiene definido como '${entityColumnType}'.`
+                        `❌ [ODM Error] Inconsistencia en '${field}'. DTO espera '${dtoTypeName}', Entidad define '${entityColumnType}'.`
                     );
                 }
             }
         }
     }
 
-    private getHeadersForEntity(entity: Function): string[] {
+    private getHeadersForEntity(entity: ClassType): string[] {
         const colDetails = this.registry.getColumnDetails(entity);
         const colMap = this.registry.getColumnMap(entity);
         return Object.entries(colMap)
             .sort(([, a], [, b]) => a - b)
-            .map(([propName]) => colDetails[propName].name || propName);
+            .map(([propName]) => {
+                const colConfig = colDetails[propName];
+                return (colConfig?.name ? colConfig.name : propName).toUpperCase();
+            });
     }
 }
