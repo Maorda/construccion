@@ -9,6 +9,7 @@ import { RelationManager } from '@sheetOdm/services/relation-manager.service';
 import { DataMapper } from '@sheetOdm/services/data-mapper.service';
 import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
 import { ProjectionService } from '@sheetOdm/engines/projection.service';
+import { ModuleRef } from '@nestjs/core';
 
 @Injectable()
 export class SheetsRepositoryFactory {
@@ -22,6 +23,7 @@ export class SheetsRepositoryFactory {
         private readonly dataMapper: DataMapper,
         private readonly hydrator: SheetDocumentHydrator,
         private readonly projectionService: ProjectionService,
+        private moduleRef: ModuleRef,
     ) { }
 
     /**
@@ -37,7 +39,8 @@ export class SheetsRepositoryFactory {
             entityClass,
             this.relationManager,
             this.dataMapper,
-            this.hydrator,
+            this.moduleRef
+
         );
 
         // repo.entityClass = entityClass;

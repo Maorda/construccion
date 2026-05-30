@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { IQueryStage } from "@sheetOdm/engines/query/IPipelineStage";
 
 import { LookupConfig } from "../types";
+import { RelationEngine } from "@sheetOdm/engines/relationEngine";
 
 
 @Injectable()

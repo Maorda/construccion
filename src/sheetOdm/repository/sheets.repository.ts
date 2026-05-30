@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { GoogleAutenticarService } from '@sheetOdm/services/auth.google.service';
 import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
@@ -15,6 +14,9 @@ import { RelationManager } from '@sheetOdm/services/relation-manager.service';
 import { IdGenerator } from '@sheetOdm/utils/id.generator';
 import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
 import { SheetDocument } from '@sheetOdm/wrapper/sheet.document';
+import { ModuleRef } from '@nestjs/core';
+import { getRepositoryToken } from '@sheetOdm/utils/helper';
+// Registro global auxiliar para resolver inyecciones circulares entre repositorios en populate
 
 @Injectable()
 export class SheetsRepository<T extends object> {
@@ -34,8 +36,7 @@ export class SheetsRepository<T extends object> {
         public readonly entityClass: ClassType<T>,
         protected readonly relationManager: RelationManager,
         protected readonly dataMapper: DataMapper,
-        private readonly hydrator: SheetDocumentHydrator
-
+        private readonly moduleRef: ModuleRef
 
     ) {
 
@@ -137,123 +138,90 @@ export class SheetsRepository<T extends object> {
         return this.metadataRegistry.getPrimaryKeyField(this.entityClass);
     }
 
-    /**
-     * Consulta registros aplicando filtros, ordenamiento, límites y proyecciones.
-     */
-    async find(filter?: FilterQuery<T>, options?: QueryOptions): Promise<SheetDocument<T>[]> {
+
+
+    protected async fetchRawData(includeInactive = false): Promise<any[]> {
         const spreadsheetId = this.optionsDatabase.SPREADSHEET_ID;
 
+        // Idealmente, esto debería moverse al this.gateway en el futuro
+        const response = await this.googleSheets.sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${this.sheetName}!A2:Z10000`,
+        });
+
+        const rows: any[][] = response.data.values || [];
+        const details = this.metadataRegistry.getColumnDetails(this.entityClass);
+
+        let items = rows.map((row, index) => {
+            const item: any = {};
+            item[ROW_INDEX_SYMBOL] = index + 2; // Guardamos la fila física
+
+            Object.keys(details).forEach(prop => {
+                const colConfig = details[prop];
+                const headerName = colConfig.name ? colConfig.name.toUpperCase() : NamingStrategy.formatColumnName(prop);
+                const colIndex = this.headers.indexOf(headerName);
+
+                if (colIndex !== -1 && row[colIndex] !== undefined) {
+                    item[prop] = this.hydrateValue(row[colIndex], colConfig.type);
+                } else {
+                    item[prop] = colConfig.default ?? null;
+                }
+            });
+
+            return item;
+        });
+
+        // Filtrado de eliminación lógica
+        const deleteControlProp = this.metadataRegistry.getDeleteControlProperty(this.entityClass);
+        if (deleteControlProp && !includeInactive) {
+            items = items.filter(item => {
+                const isDeleted = item[deleteControlProp];
+                return isDeleted !== true && isDeleted !== 'true' && isDeleted !== 1 && isDeleted !== '1';
+            });
+        }
+
+        return items;
+    }
+
+    /**
+     * 🔵 BÚSQUEDA TRADICIONAL
+     * Devuelve entidades hidratadas (SheetDocument) listas para ser mutadas y guardadas.
+     */
+    async find(filter?: FilterQuery<T>, options?: QueryOptions<T>): Promise<SheetDocument<T>[]> {
         try {
-            const response = await this.googleSheets.sheets.spreadsheets.values.get({
-                spreadsheetId,
-                range: `${this.sheetName}!A2:Z10000`,
-            });
+            const rawItems = await this.fetchRawData(options?.includeInactive);
 
-            const rows: any[][] = response.data.values || [];
-            const details = this.metadataRegistry.getColumnDetails(this.entityClass);
-            // El columnMap parece no usarse en este bloque, pero lo mantenemos por si acaso
-            const columnMap = this.metadataRegistry.getColumnMap(this.entityClass);
+            // Pasamos por el pipeline unificado ($match, $sort, $limit)
+            const processedItems = await this.queryEngine.execute(rawItems, filter, options);
 
-            // Mapear cada fila plana en una instancia limpia de la Entidad
-            let items: any[] = rows.map((row, index) => {
-                // 🌟 REFACTOR: Ya no inyectamos __row como propiedad pública.
-                // Usamos el Symbol para mantener el índice de la fila física (index 0 es fila 2).
-                const item: any = {};
-                item[ROW_INDEX_SYMBOL] = index + 2;
-
-                Object.keys(details).forEach(prop => {
-                    const colConfig = details[prop];
-                    const headerName = colConfig.name ? colConfig.name.toUpperCase() : NamingStrategy.formatColumnName(prop);
-                    const colIndex = this.headers.indexOf(headerName);
-
-                    if (colIndex !== -1 && row[colIndex] !== undefined) {
-                        (item as any)[prop] = this.hydrateValue(row[colIndex], colConfig.type);
-                    } else {
-                        (item as any)[prop] = colConfig.default ?? null;
-                    }
-                });
-
-                return item;
-            });
-
-            // 1. Filtrar los eliminados lógicamente
-            const deleteControlProp = this.metadataRegistry.getDeleteControlProperty(this.entityClass);
-            if (deleteControlProp && !options?.includeInactive) {
-                items = items.filter(item => {
-                    const isDeleted = item[deleteControlProp];
-                    return isDeleted !== true && isDeleted !== 'true' && isDeleted !== 1 && isDeleted !== '1';
-                });
-            }
-
-            // 2. Ejecutar el motor de consulta en memoria
-            return this.queryEngine.execute(items, filter, options);
+            // 🌟 LATE HYDRATION: Convertimos SOLO los resultados finales a SheetDocument
+            return processedItems.map(raw => new SheetDocument<T>(raw, this, false));
         } catch (error) {
             this.logger.error(`❌ Error en find() en "${this.sheetName}": ${error.message}`);
             return [];
         }
     }
 
-    /**
-     * Obtiene un único registro.
-     */
-    async findOne(filter?: FilterQuery<T>, projection?: any): Promise<Partial<T> | null> {
-        const results = await this.find(filter, { limit: 1, projection });
+    async findOne(filter?: FilterQuery<T>, options?: Pick<QueryOptions<T>, 'projection' | 'includeInactive'>): Promise<SheetDocument<T> | null> {
+        const results = await this.find(filter, { limit: 1, ...options });
         return results.length > 0 ? results[0] : null;
     }
 
-
-    async save5(doc: SheetDocument<T>): Promise<SheetDocument<T>> {
-        const sheetName = Reflect.getMetadata(SHEETS_TABLE_NAME, this.entityClass);
-
-        // Mantenemos la lógica de detección de nuevo (basada en el estado interno)
-        const isNewDocument = (typeof doc.isNew === 'function') ? doc.isNew() : (doc as any)._isNew;
-
-        // 1. 🔑 AUTO-GENERACIÓN DE IDENTIFICADORES
-        if (isNewDocument) {
-            const details = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, this.entityClass) || {};
-
-            for (const [propName, config] of Object.entries(details)) {
-                const columnConfig = config as any;
-
-                if (columnConfig?.generated && !(doc as any)[propName]) {
-                    if (columnConfig.generated === 'uuid') {
-                        (doc as any)[propName] = IdGenerator.generate();
-                    } else if (columnConfig.generated === 'short-id') {
-                        (doc as any)[propName] = IdGenerator.generateShort();
-                    }
-                }
-            }
-        }
-
-        // 2. Mapeo estructural
-        const colMap = this.metadataRegistry.getColumnMap(this.entityClass);
-        const row = new Array(Object.keys(colMap).length).fill('');
-
-        for (const [propName, index] of Object.entries(colMap)) {
-            row[index] = (doc as any)[propName] ?? '';
-        }
-
-        this.logger.debug(`[Save] Persistiendo fila: ${JSON.stringify(row)}`);
-
+    /**
+     * 🟣 MOTOR DE AGREGACIÓN
+     * Expone el QueryEngine para operaciones complejas ($group, $lookup, $unwind).
+     * Devuelve R[] (datos planos) porque la estructura original muta al agruparse.
+     */
+    async aggregate<R = any>(pipeline: any[]): Promise<R[]> {
         try {
-            // 🌟 REFACTOR: Uso del Symbol para obtener la fila física
-            const rowIndex = (doc as any)[ROW_INDEX_SYMBOL];
-
-            const assignedRowNumber = isNewDocument
-                ? await this.gateway.appendRow(sheetName, row)
-                : await this.gateway.updateRow(sheetName, rowIndex, row);
-
-            // Sellar el documento en memoria
-            doc.markAsSaved(assignedRowNumber);
-
-            return doc;
-        } catch (error: any) {
-            this.logger.error(`[Save] Error en ${sheetName}: ${error.message}`);
+            const rawItems = await this.fetchRawData(false);
+            const result = await this.queryEngine.aggregate(rawItems, pipeline);
+            return result as R[];
+        } catch (error) {
+            this.logger.error(`❌ Error en aggregate() en "${this.sheetName}": ${error.message}`);
             throw error;
         }
     }
-
-
     async findAll1(): Promise<T[]> {
         // 1. Obtener datos crudos
         const rawData = await this.gateway.getRange(`${this.sheetName}!A:Z`);
@@ -265,240 +233,156 @@ export class SheetsRepository<T extends object> {
         return await this.relationManager.populate(entities, this.entityClass);
     }
 
-    async create1(data: T): Promise<T> {
-        const entity = { ...data };
-        const pkField = this.metadataRegistry.getPrimaryKeyField(this.entityClass);
-
-        // Generación delegada a IdGenerator
-        if (!entity[pkField as keyof T]) {
-            entity[pkField as keyof T] = this.generateId(this.entityClass) as any;
-        }
-
-        const sheetName = Reflect.getMetadata(SHEETS_TABLE_NAME, this.entityClass);
-        const colMap = this.metadataRegistry.getColumnMap(this.entityClass);
-
-
-        const row = new Array(Object.keys(colMap).length).fill('');
-
-        // Mapeo posicional
-        for (const [key, value] of Object.entries(entity)) {
-            const index = colMap[key];
-            if (index !== undefined) row[index] = value;
-        }
-
-        try {
-            await this.gateway.appendRow(sheetName, row);
-            console.log(`✅ Datos enviados a ${sheetName}:`, row); // <--- DEBERÍAS VER ESTO
-        } catch (error) {
-            console.error(`❌ ERROR CRÍTICO AL GUARDAR EN SHEETS:`, error); // <--- REVISA TU CONSOLA AQUÍ
-            throw error;
-        }
-
-        return entity; // Retorno de tipo T cumplido
-    }
-
-    private generateId(entityClass: any): string {
-        const details = this.metadataRegistry.getColumnDetails(entityClass);
-        const pkField = this.metadataRegistry.getPrimaryKeyField(entityClass);
-        const options = details[pkField];
-
-        // Usamos tu clase IdGenerator
-        if (options?.generated === 'uuid') {
-            return IdGenerator.generate();
-        }
-        if (options?.generated === 'short-id') {
-            return IdGenerator.generateShort();
-        }
-
-        return Date.now().toString();
-    }
-
     /**
-     * Inserta un nuevo registro en Google Sheets.
+     * 🟡 FACTORY: Crea una instancia de SheetDocument en memoria (NO guarda en BD).
+     * Útil para instanciar, modificar y luego llamar a doc.save()
      */
-    async create(data: Partial<T>): Promise<SheetDocument<T>> {
-        const spreadsheetId = this.optionsDatabase.SPREADSHEET_ID;
-
-        // 1. Generar PK automáticamente si no viene dada
+    create(data: Partial<T>): SheetDocument<T> {
         const pkField = this.getPrimaryKeyField();
         const details = this.metadataRegistry.getColumnDetails(this.entityClass);
         const pkConfig = details[pkField];
 
-        let itemToSave: any = { ...data };
+        const itemData: any = { ...data };
 
-        if (!itemToSave[pkField]) {
+        // 1. Generar PK si no existe (Síncrono para UUID/Short-ID)
+        if (!itemData[pkField]) {
             if (pkConfig?.generated === 'uuid') {
-                itemToSave[pkField] = uuidv4();
-            } else if (pkConfig?.isAutoIncrement || pkConfig?.generated === 'increment') {
-                itemToSave[pkField] = await this.calculateNextIncrementId(pkField);
-            } else {
-                itemToSave[pkField] = uuidv4(); // Fallback por defecto
+                itemData[pkField] = IdGenerator.generate();
+            } else if (pkConfig?.generated === 'short-id') {
+                itemData[pkField] = IdGenerator.generateShort();
             }
         }
 
-        // 2. Aplicar validación de Joi dinámica basada en metadatos
-        itemToSave = this.validateWithJoi(itemToSave);
-
-
-        // 3. Serializar objetos complejos (json, array) y mapear a arreglo plano posicional
-        const flatRow = this.headers.map(header => {
-            const propName = Object.keys(details).find(p => {
-                const hName = details[p].name ? details[p].name!.toUpperCase() : NamingStrategy.formatColumnName(p);
-                return hName === header;
-            });
-
-            if (!propName) return '';
-            const rawVal = itemToSave[propName];
-            return this.serializeValue(rawVal, details[propName].type);
-        });
-
-        try {
-            const appendResponse = await this.googleSheets.sheets.spreadsheets.values.append({
-                spreadsheetId,
-                range: `${this.sheetName}!A:A`,
-                valueInputOption: 'RAW',
-                requestBody: {
-                    values: [flatRow],
-                },
-            });
-
-            // Extraer el índice de la fila física agregada
-            const updatedRange = appendResponse.data.updates?.updatedRange || ''; // Ej. OBREROS!A5:C5
-            const rowMatch = updatedRange.match(/!A(\d+):/);
-            const rowNumber = rowMatch ? parseInt(rowMatch[1], 10) : undefined;
-
-            // 1. Instanciamos la clase de la entidad
-            const entityInstance = new this.entityClass();
-
-            // 2. Hidratamos la instancia con los datos guardados
-            // (Podrías usar tu hydrator aquí o Object.assign)
-            Object.assign(entityInstance, itemToSave);
-            (entityInstance as any)[ROW_INDEX_SYMBOL] = rowNumber; // Inyectamos la fila real
-
-            // 3. Envolvemos en SheetDocument
-            const doc = new SheetDocument(entityInstance, this);
-            doc.markAsSaved(rowNumber);
-
-            // 4. Retornamos el Documento (¡con getters!)
-            return doc;
-        } catch (error) {
-            this.logger.error(`❌ Error al crear en "${this.sheetName}": ${error.message}`);
-            throw error;
-        }
+        // 2. Instanciación e Hidratación inicial
+        return new SheetDocument<T>(itemData, this, true);
     }
 
     /**
-     * Actualiza un registro existente.
+     * 🟠 PERSISTENCIA: Guarda un SheetDocument en Google Sheets (Inserta o Actualiza).
+     * Reemplaza a save5() y a la lógica repetida de create().
      */
-    /*async update(
-        id: string,
-        data: Partial<T>,
-        options?: { rowNumber?: number }
-    ): Promise<T> {
-        const spreadsheetId = this.optionsDatabase.SPREADSHEET_ID;
+    async save(doc: SheetDocument<T>): Promise<SheetDocument<T>> {
+        const sheetName = Reflect.getMetadata(SHEETS_TABLE_NAME, this.entityClass);
+        const isNewDocument = doc.isModified() && (typeof doc.isNew === 'function' ? doc.isNew() : (doc as any)._isNew);
+
+        // 1. Manejo especial para IDs Autoincrementales (Requiere asincronía)
         const pkField = this.getPrimaryKeyField();
-
-        let rowNumber = options?.rowNumber;
-
-        // 1. Si no tenemos la fila física pre-calculada, la localizamos
-        if (!rowNumber) {
-            const found = await this.findOne({ [pkField]: id } as any);
-            if (!found || !(found as any).__row) {
-                throw new Error(`Registro con ID "${id}" no encontrado en ${this.sheetName}.`);
-            }
-            rowNumber = (found as any).__row;
+        const pkConfig = this.metadataRegistry.getColumnDetails(this.entityClass)[pkField];
+        if (isNewDocument && !doc[pkField] && (pkConfig?.isAutoIncrement || pkConfig?.generated === 'increment')) {
+            doc[pkField] = await this.calculateNextIncrementId(pkField);
         }
 
-        // 2. Leer estado actual de la fila y fusionar delta
-        const response = await this.googleSheets.sheets.spreadsheets.values.get({
-            spreadsheetId,
-            range: `${this.sheetName}!A${rowNumber}:Z${rowNumber}`,
-        });
+        // 2. Extraer datos planos y validar
+        let rawData = doc.toObject();
+        rawData = this.validateWithJoi(rawData);
 
-        const currentRow: any[] = response.data.values ? response.data.values[0] : [];
+        // 3. Mapeo a fila plana (Array) basado en cabeceras
         const details = this.metadataRegistry.getColumnDetails(this.entityClass);
-
-        const currentMergedData: any = {};
-        Object.keys(details).forEach(prop => {
-            const colConfig = details[prop];
-            const headerName = colConfig.name ? colConfig.name.toUpperCase() : NamingStrategy.formatColumnName(prop);
-            const colIndex = this.headers.indexOf(headerName);
-
-            if (colIndex !== -1 && currentRow[colIndex] !== undefined) {
-                currentMergedData[prop] = this.hydrateValue(currentRow[colIndex], colConfig.type);
-            } else {
-                currentMergedData[prop] = colConfig.default ?? null;
-            }
-        });
-
-        // Combinar datos
-        const merged = { ...currentMergedData, ...data };
-        delete merged.__row;
-
-        // 3. Validar dinámicamente con Joi
-        const validated = this.validateWithJoi(merged);
-
-        // 4. Mapear a fila posicional
         const flatRow = this.headers.map(header => {
             const propName = Object.keys(details).find(p => {
                 const hName = details[p].name ? details[p].name!.toUpperCase() : NamingStrategy.formatColumnName(p);
                 return hName === header;
             });
-
             if (!propName) return '';
-            return this.serializeValue(validated[propName], details[propName].type);
+            return this.serializeValue(rawData[propName], details[propName].type);
         });
 
         try {
-            await this.googleSheets.sheets.spreadsheets.values.update({
-                spreadsheetId,
-                range: `${this.sheetName}!A${rowNumber}`,
-                valueInputOption: 'RAW',
-                requestBody: {
-                    values: [flatRow],
-                },
-            });
+            let assignedRowNumber = (doc as any)[ROW_INDEX_SYMBOL];
 
-            validated.__row = rowNumber;
-            return validated;
-        } catch (error) {
-            this.logger.error(`❌ Error al actualizar en "${this.sheetName}": ${error.message}`);
+            if (isNewDocument || !assignedRowNumber) {
+                // INSERTAR
+                assignedRowNumber = await this.gateway.appendRow(sheetName, flatRow);
+            } else {
+                // ACTUALIZAR
+                await this.gateway.updateRow(sheetName, assignedRowNumber, flatRow);
+            }
+
+            // Sellar el documento (limpia el estado de isModified y guarda el nuevo snapshot)
+            doc.markAsSaved(assignedRowNumber);
+            return doc;
+
+        } catch (error: any) {
+            this.logger.error(`❌ [Save] Error en ${sheetName}: ${error.message}`);
             throw error;
         }
-    }*/
+    }
+    async update(filter: FilterQuery<T>, updateData: Partial<T>): Promise<SheetDocument<T> | null> {
+        // 1. Encontrar el documento
+        const doc = await this.findOne(filter);
+        if (!doc) return null;
 
-    /**
-     * Realiza un Soft Delete (marcar borrado lógico) o Hard Delete (limpieza física).
-     */
-    /*async delete(id: string): Promise<boolean> {
-        const spreadsheetId = this.optionsDatabase.SPREADSHEET_ID;
-        const pkField = this.getPrimaryKeyField();
+        // 2. Fusionar datos (Delta)
+        const currentData = doc.toObject();
+        const mergedData = { ...currentData, ...updateData };
 
-        const found = await this.findOne({ [pkField]: id } as any);
-        if (!found || !(found as any).__row) {
-            return false;
-        }
+        // 3. Validar con Joi (esto es vital para mantener la consistencia)
+        const validatedData = this.validateWithJoi(mergedData);
 
-        const rowNumber = (found as any).__row;
+        // 4. Aplicar cambios al documento en memoria
+        Object.assign(doc, validatedData);
+
+        // 5. Persistir (Usamos el método save() que ya unificamos anteriormente)
+        return await this.save(doc);
+    }
+
+    async delete(filter: FilterQuery<T>): Promise<boolean> {
+        const doc = await this.findOne(filter);
+        if (!doc) return false;
+
+        // 1. EJECUTAR CASCADA ANTES DEL BORRADO DEL PADRE
+        await this.processCascadeDelete(doc);
+
+        // 2. BORRADO DEL PADRE (Soft o Hard)
+        const sheetName = this.sheetName;
+        const rowIndex = (doc as any)[ROW_INDEX_SYMBOL];
         const deleteControlProp = this.metadataRegistry.getDeleteControlProperty(this.entityClass);
 
         try {
             if (deleteControlProp) {
-                // Soft Delete: Actualizar columna de borrado a true
-                const updatePayload: any = { [deleteControlProp]: true };
-                await this.update(id, updatePayload, { rowNumber });
-                return true;
+                (doc as any)[deleteControlProp] = true;
+                await this.save(doc);
             } else {
-                // Hard Delete: Limpiar los valores de la fila
-                await this.googleSheets.sheets.spreadsheets.values.clear({
-                    spreadsheetId,
-                    range: `${this.sheetName}!A${rowNumber}:Z${rowNumber}`,
-                });
-                return true;
+                await this.gateway.clearRow(sheetName, rowIndex);
             }
+            return true;
         } catch (error) {
-            this.logger.error(`❌ Error al borrar en "${this.sheetName}": ${error.message}`);
+            this.logger.error(`❌ [Delete] Error en ${sheetName}: ${error.message}`);
             return false;
+        }
+    }
+
+    /**
+     * Lógica Senior: Resolución dinámica de repositorios para cascada
+     */
+    private async processCascadeDelete(doc: SheetDocument<T>): Promise<void> {
+        const relations = this.metadataRegistry.getRelationsList(this.entityClass); // Debes crear este método en tu Registry
+
+        for (const relationField of relations) {
+            const config = this.metadataRegistry.getRelationOptions(this.entityClass, relationField);
+
+            // Solo procesar si es CASCADE
+            if (config?.options?.onDelete === 'CASCADE') {
+                const targetEntityClass = config.targetEntity();
+                const joinColumn = config.options.joinColumn || `${this.entityClass.name.toLowerCase()}Id`;
+                const localField = config.options.localField || this.getPrimaryKeyField();
+                const parentId = (doc as any)[localField];
+
+                // Resolución dinámica Senior vía ModuleRef
+                const repoToken = getRepositoryToken(targetEntityClass);
+                try {
+                    const childRepo = this.moduleRef.get<SheetsRepository<any>>(repoToken, { strict: false });
+
+                    // Buscar hijos y borrarlos
+                    const children = await childRepo.find({ [joinColumn]: parentId } as any);
+                    for (const child of children) {
+                        await childRepo.delete({ [childRepo.getPrimaryKeyField()]: (child as any)[childRepo.getPrimaryKeyField()] } as any);
+                    }
+                    this.logger.log(`✅ Cascada ejecutada: [${children.length}] registros de ${targetEntityClass.name} eliminados.`);
+                } catch (e) {
+                    this.logger.warn(`⚠️ No se pudo ejecutar cascada para ${targetEntityClass.name}: ${e.message}`);
+                }
+            }
         }
     }
 
@@ -540,38 +424,18 @@ export class SheetsRepository<T extends object> {
         return options?.new !== false ? updated : found;
     }*/
 
-    /**
-     * Método RECURSIVO: Resuelve relaciones @SubCollection inyectando y consultando otros repositorios.
-     */
     async populate(entity: any, relationField: string): Promise<any> {
-        if (!entity) return entity;
+        const config = this.metadataRegistry.getRelationOptions(this.entityClass, relationField);
+        if (!config) return entity;
 
-        const relationConfig = this.metadataRegistry.getRelationOptions(this.entityClass, relationField);
-        if (!relationConfig) return entity;
+        const targetEntity = config.targetEntity() as ClassType;
+        const joinColumn = config.options?.joinColumn || `${this.entityClass.name.toLowerCase()}Id`;
+        const localField = config.options?.localField || this.metadataRegistry.getPrimaryKeyField(this.entityClass);
 
-        const targetEntityClass = relationConfig.targetEntity();
-        const options = relationConfig.options;
+        // Resolución dinámica del repositorio
+        const childRepo = this.moduleRef.get<SheetsRepository<any>>(getRepositoryToken(targetEntity), { strict: false });
 
-        // Deducir localField y joinColumn
-        const localField = options?.localField || this.getPrimaryKeyField();
-        const joinColumn = options?.joinColumn || `${this.entityClass.name.toLowerCase()}Id`;
-
-        const parentVal = entity[localField];
-        if (parentVal === undefined || parentVal === null) {
-            entity[relationField] = [];
-            return entity;
-        }
-
-        // Obtener dinámicamente el repositorio de la entidad destino
-        // Usamos una inyección de respaldo directa a través del Singleton o factory global
-        const childRepo = GLOBAL_REPO_REGISTRY.get(targetEntityClass);
-        if (!childRepo) {
-            this.logger.error(`❌ No se encontró un repositorio registrado para la clase relacionada: [${targetEntityClass.name}]`);
-            return entity;
-        }
-
-        // Consultar hijos
-        const children = await childRepo.find({ [joinColumn]: parentVal });
+        const children = await childRepo.find({ [joinColumn]: entity[localField] });
         entity[relationField] = children;
 
         return entity;
@@ -679,5 +543,3 @@ export class SheetsRepository<T extends object> {
     }
 }
 
-// Registro global auxiliar para resolver inyecciones circulares entre repositorios en populate
-export const GLOBAL_REPO_REGISTRY = new Map<any, SheetsRepository<any>>();

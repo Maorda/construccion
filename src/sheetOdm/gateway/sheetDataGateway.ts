@@ -88,4 +88,15 @@ export class SheetDataGateway implements ISheetDriver {
             throw error;
         }
     }
+    async clearRow(sheetName: string, rowNumber: number): Promise<void> {
+        try {
+            await this.auth.sheets.spreadsheets.values.clear({
+                spreadsheetId: this.spreadsheetId,
+                range: `${sheetName}!A${rowNumber}:Z${rowNumber}`, // Asumimos un ancho de 26 columnas (A-Z)
+            });
+        } catch (error: any) {
+            this.logger.error(`Error en clearRow para ${sheetName} en fila ${rowNumber}: ${error.message}`);
+            throw error;
+        }
+    }
 }

@@ -7,13 +7,17 @@ export type Projection<T = any> = {
 
 
 export interface IQueryEngine {
-    execute<T extends object>(data: T[], instructions: any): any[];
+    execute<T extends object>(
+        data: T[],
+        filter: FilterQuery<T>, // Ahora es fuertemente tipado
+        options?: QueryOptions
+    ): Promise<any[]>;
     aggregate<T extends object>(data: T[], pipeline: any[]): Promise<any[]>;
 }
 
 // Tipo auxiliar para las opciones de consulta
-export interface QueryOptions {
-    projection?: Projection;
+export interface QueryOptions<T = any> {
+    projection?: Projection<T>;
     limit?: number;
     offset?: number;
     sort?: { field: string; order: 'ASC' | 'DESC' };

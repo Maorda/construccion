@@ -1,5 +1,5 @@
 import { Global, Module, DynamicModule, Provider } from '@nestjs/common';
-import { DiscoveryModule, APP_INTERCEPTOR } from '@nestjs/core';
+import { DiscoveryModule, APP_INTERCEPTOR, ModuleRef } from '@nestjs/core';
 import { HttpModule } from '@nestjs/axios';
 import { CacheModule, CacheInterceptor } from '@nestjs/cache-manager';
 
@@ -23,12 +23,31 @@ import { DatabaseModuleOptions, DatabaseModuleAsyncOptions, GoogleDriveConfig } 
 import { createModel } from '@sheetOdm/repository/create-model';
 import { InfrastructureProvisioner } from './services/InfrastructureProvisioner.service';
 import { SheetDataGateway } from './gateway/sheetDataGateway';
-import { SheetsRepository } from './repository/sheets.repository';
 import { RelationManager } from './services/relation-manager.service';
 import { DataMapper } from './services/data-mapper.service';
 import { SheetDocumentHydrator } from './core/base/SheetDocumentHydrator';
 
+import { MatchStage, SortStage } from './engines/query/match_sort_pagination';
+import { ProjectStage } from './engines/query/projection';
+import { AddFieldsStage } from './pipelines/stages/add-fields.stage';
+import { GroupStage } from './pipelines/stages/group.stage';
+import { LimitStage } from './pipelines/stages/limit.stage';
+import { SkipStage } from './pipelines/stages/skip.stage';
+import { UnwindStage } from './pipelines/stages/unwind.stage';
+import { LookupStage } from './pipelines/stages/lookup.stage';
+import { SheetsRepositoryBuilder } from './repository/SheetsRepositoryBuilder';
+
 const CORE_PROVIDERS: Provider[] = [
+
+    MatchStage,
+    ProjectStage,
+    LookupStage,
+    SortStage,
+    GroupStage,
+    UnwindStage,
+    AddFieldsStage,
+    LimitStage,
+    SkipStage,
     GoogleAutenticarService,
     GoogleHealthService,
     DatabaseConfigService,
@@ -122,8 +141,29 @@ export class OdmSheetModule {
                 // 1. EL REPOSITORIO: Delegamos el instanciamiento a la fábrica
                 {
                     provide: REPO_TOKEN,
-                    useFactory: (factory: SheetsRepositoryFactory) => factory.create(Entity),
-                    inject: [SheetsRepositoryFactory],
+                    useFactory: (googleSheets: GoogleAutenticarService,
+                        metadataRegistry: MetadataRegistry,
+                        queryEngine: QueryEngine,
+                        optionsDatabase: DatabaseModuleOptions,
+                        gateway: SheetDataGateway,
+                        relationManager: RelationManager,
+                        dataMapper: DataMapper,
+                        moduleRef: ModuleRef) => {
+                        // Llamas a tu builder limpio
+                        return SheetsRepositoryBuilder.build(
+                            Entity, googleSheets, metadataRegistry, queryEngine,
+                            optionsDatabase, gateway, relationManager, dataMapper, moduleRef
+                        );
+                    },
+                    inject: [GoogleAutenticarService,
+                        MetadataRegistry,
+                        QueryEngine,
+                        'DATABASE_OPTIONS', // Importante: usar el token string
+                        SheetDataGateway,
+                        RelationManager,
+                        DataMapper,
+                        ModuleRef
+                    ],
                 },
                 // 2. EL MODELO: Construido dinámicamente con el wrap Active Record
                 {

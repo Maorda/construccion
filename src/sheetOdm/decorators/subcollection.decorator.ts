@@ -25,6 +25,7 @@ export interface SubCollectionOptions {
     /** En caso de requerir mapear un campo destino específico manualmente */
     joinColumn?: string;
     localField?: string;
+    cascadeDelete: boolean
 }
 
 export function SubCollection(

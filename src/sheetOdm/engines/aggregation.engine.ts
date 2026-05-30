@@ -2,6 +2,7 @@ import { Logger } from "@nestjs/common";
 
 import { ModuleRef } from "@nestjs/core";
 import { ExpressionEngine } from "./expression.engine";
+import { LookupConfig } from "@sheetOdm/pipelines/types";
 
 export class AggregationEngine {
     constructor(

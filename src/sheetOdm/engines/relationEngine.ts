@@ -453,7 +453,7 @@ export class RelationEngine {
             this.logger.debug(`[RelationEngine] Buscando hijo directo (1:1) en "${TargetEntityClass.name}" para el campo "${currentField}"`);
 
             const joinColumn = options.joinColumn || 'id';
-            relatedResult = await targetRepository.f.findOne({
+            relatedResult = await targetRepository.findOne({
                 [joinColumn]: localValue
             } as FilterQuery<any>);
         }

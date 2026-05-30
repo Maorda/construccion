@@ -16,7 +16,39 @@ dayjs.extend(weekOfYear);
 @Injectable()
 export class ExpressionEngine {
     private readonly logger = new Logger(ExpressionEngine.name);
-    constructor(private readonly compareEngine: CompareEngine) { }
+    constructor(
+        private readonly compareEngine: CompareEngine
+    ) { }
+    /**
+     * 🟢 MÉTODO PRINCIPAL (PUNTO DE ENTRADA DE PROYECCIONES)
+     * Evalúa un registro en base a un mapa de transformaciones.
+     */
+    public execute(record: any, projection: any): any {
+        if (!projection || typeof projection !== 'object') return projection;
+        if (!record) return {};
+        if (Array.isArray(projection)) return projection.map(item => this.execute(record, item));
+
+        const result: any = {};
+        for (const key in projection) {
+            const expression = projection[key];
+            if (this.isOperatorObject(expression)) {
+                const operatorKey = Object.keys(expression)[0];
+                result[key] = this.runOperator(operatorKey, expression[operatorKey], record);
+            } else if (expression && typeof expression === 'object') {
+                result[key] = this.evaluate(expression, record);
+            } else {
+                result[key] = this.evaluate(expression, record);
+            }
+        }
+        return result;
+    };
+
+    private isOperatorObject(obj: any): boolean {
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+        const keys = Object.keys(obj);
+        return keys.length === 1 && keys[0].startsWith('$');
+    }
+
 
     /**
      * Evalúa un filtro completo sobre un objeto de registro.
