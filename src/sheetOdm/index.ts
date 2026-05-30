@@ -31,7 +31,7 @@ export * from './engines/compare.engine';
 export * from './engines/expression.engine';
 export * from './engines/projection.service';
 export * from './engines/aggregation.engine';
-export * from './engines/query.engine';
+export * from './pipelines/query.engine';
 
 // 8. Módulo Principal
 export * from './odm-sheet.module';

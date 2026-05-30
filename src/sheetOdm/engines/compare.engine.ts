@@ -1,116 +1,127 @@
-import { Injectable } from '@nestjs/common';
-import { ComparisonOperators } from '@sheetOdm/types/query.types';
+import { Injectable } from "@nestjs/common";
+import { ModuleRef } from "@nestjs/core";
+import { ExpressionEngine } from "./expression.engine";
+import { FilterQuery } from "@sheetOdm/types/query.types";
+
 
 @Injectable()
 export class CompareEngine {
+    constructor(
+        private readonly expressionEngine: ExpressionEngine,
+
+    ) { }
+
     /**
-     * Evalúa si un valor de registro satisface una condición de filtro (directa o con operadores).
+     * EVALUADOR DE FILTROS (Punto de entrada)
+     * Mejora: Uso de bucles for...of y extracción de lógica estática para maximizar velocidad.
      */
-    evaluateValue(itemValue: any, filterCondition: any): boolean {
-        // Si la condición de filtro no es un objeto o es nula, o es una fecha, hacemos comparación directa
-        if (
-            filterCondition === null ||
-            filterCondition === undefined ||
-            typeof filterCondition !== 'object' ||
-            filterCondition instanceof Date ||
-            Array.isArray(filterCondition)
-        ) {
-            return this.equals(itemValue, filterCondition);
-        }
+    public applyFilter<T extends Record<string, any>>(record: T, filter: FilterQuery<T>): boolean {
+        // 1. Short-circuit: Si no hay filtro, el registro es totalmente válido.
+        if (!filter || Object.keys(filter).length === 0) return true;
 
-        // Si es un objeto de operadores ($gt, $lt, etc.)
-        const keys = Object.keys(filterCondition);
-        const hasOperators = keys.some(key => key.startsWith('$'));
+        // 2. Procesamos cada una de las condiciones del filtro (claves del objeto)
+        for (const key of Object.keys(filter)) {
+            const filterValue = (filter as any)[key];
 
-        if (!hasOperators) {
-            // Comparación directa de objetos (POJO)
-            return this.equals(itemValue, filterCondition);
-        }
-
-        for (const op of keys) {
-            const conditionValue = filterCondition[op];
-
-            switch (op) {
-                case '$eq':
-                    if (!this.equals(itemValue, conditionValue)) return false;
-                    break;
-                case '$ne':
-                    if (this.equals(itemValue, conditionValue)) return false;
-                    break;
-                case '$gt':
-                    if (!(itemValue > conditionValue)) return false;
-                    break;
-                case '$gte':
-                    if (!(itemValue >= conditionValue)) return false;
-                    break;
-                case '$lt':
-                    if (!(itemValue < conditionValue)) return false;
-                    break;
-                case '$lte':
-                    if (!(itemValue <= conditionValue)) return false;
-                    break;
-                case '$in':
-                    if (!Array.isArray(conditionValue)) return false;
-                    if (!conditionValue.some(val => this.equals(itemValue, val))) return false;
-                    break;
-                case '$nin':
-                    if (!Array.isArray(conditionValue)) return false;
-                    if (conditionValue.some(val => this.equals(itemValue, val))) return false;
-                    break;
-                case '$exists':
-                    const exists = itemValue !== undefined && itemValue !== null;
-                    if (exists !== !!conditionValue) return false;
-                    break;
-                case '$regex':
-                    if (typeof itemValue !== 'string') return false;
-                    const flags = filterCondition.$options || '';
-                    const regex = new RegExp(conditionValue, flags);
-                    if (!regex.test(itemValue)) return false;
-                    break;
-                case '$options':
-                    // Se procesa junto con $regex
-                    break;
-                default:
-                    // Operador desconocido
+            // --- CASO A: OPERADORES LÓGICOS EN LA RAÍZ ($and, $or, $not) ---
+            if (key === '$and' && Array.isArray(filterValue)) {
+                if (!filterValue.every(subFilter => this.applyFilter(record, subFilter))) {
                     return false;
+                }
+                continue;
+            }
+
+            if (key === '$or' && Array.isArray(filterValue)) {
+                if (!filterValue.some(subFilter => this.applyFilter(record, subFilter))) {
+                    return false;
+                }
+                continue;
+            }
+
+            if (key === '$not' && typeof filterValue === 'object') {
+                if (this.applyFilter(record, filterValue)) {
+                    return false;
+                }
+                continue;
+            }
+
+            // --- CASO B: EVALUACIÓN DE PROPIEDADES DIRECTAS O CON OPERADORES DE CAMPO ---
+            if (filterValue && typeof filterValue === 'object' && !Array.isArray(filterValue)) {
+
+                // Si el valor del filtro es un objeto (ej: { $gt: 500 }), evaluamos sus operadores internos
+                for (const operator of Object.keys(filterValue)) {
+                    // Validamos que sea un operador válido del motor (que empiece con '$')
+                    if (!operator.startsWith('$')) continue;
+
+                    const targetValue = filterValue[operator];
+
+                    // 🟢 SOLUCIÓN ARQUITECTÓNICA: Construimos una micro-expresión para el ExpressionEngine
+                    // En lugar de buscar handlers externos con 'as any', le pasamos la estructura al motor central
+                    // Ejemplo: { $gt: [ "$saldo", 500 ] }
+                    const microExpression = {
+                        [operator]: [`$` + key, targetValue]
+                    };
+
+                    // Si el motor de expresiones evalúa que la condición es falsa, el registro no pasa el filtro
+                    if (!this.expressionEngine.evaluate(microExpression, record)) {
+                        return false;
+                    }
+                }
+            } else {
+                // Comparación directa de igualdad si no es un objeto de consulta (ej: { estado: 'ACTIVO' })
+                // Validamos dinámicamente si los valores apuntan a columnas o fórmulas
+                const resolvedRecordVal = this.expressionEngine.evaluate(`$` + key, record);
+                const resolvedFilterVal = this.expressionEngine.evaluate(filterValue, record);
+
+                if (resolvedRecordVal !== resolvedFilterVal) {
+                    return false;
+                }
             }
         }
 
+        // Si superó todas las iteraciones, el registro coincide con la búsqueda
         return true;
     }
+    /**
+ * Ordena un array de registros basándose en uno o varios campos.
+ * @param records El array de datos traídos de Sheets.
+ * @param sortOptions Un objeto tipo { presupuesto: -1, nombre: 1 }
+ * 1 = Ascendente, -1 = Descendente
+ */
+    applySort(records: any[], sortOptions: Record<string, 1 | -1>): any[] {
+        if (!sortOptions || Object.keys(sortOptions).length === 0) return records;
 
-    private equals(a: any, b: any): boolean {
-        if (a === b) return true;
+        return [...records].sort((a, b) => {
+            for (const key in sortOptions) {
+                const direction = sortOptions[key];
+                const valA = a[key];
+                const valB = b[key];
 
-        // Comparación flexible de tipos simples (ej. número contra string numérico)
-        if (typeof a === 'number' && typeof b === 'string') {
-            return a === Number(b);
-        }
-        if (typeof a === 'string' && typeof b === 'number') {
-            return Number(a) === b;
-        }
+                if (valA === valB) continue;
 
-        // Comparación de booleanos flexibles
-        if (typeof a === 'boolean' && (typeof b === 'string' || typeof b === 'number')) {
-            const bBool = b === 'true' || b === 'TRUE' || b === 1 || b === '1';
-            return a === bBool;
-        }
-        if ((typeof a === 'string' || typeof a === 'number') && typeof b === 'boolean') {
-            const aBool = a === 'true' || a === 'TRUE' || a === 1 || a === '1';
-            return aBool === b;
-        }
-
-        // Fechas
-        if (a instanceof Date && b instanceof Date) {
-            return a.getTime() === b.getTime();
-        }
-        if (a instanceof Date && typeof b === 'string') {
-            return a.getTime() === new Date(b).getTime();
-        }
-        if (typeof a === 'string' && b instanceof Date) {
-            return new Date(a).getTime() === b.getTime();
-        }
-
-        return false;
+                // Lógica de comparación universal (Soporta números, strings y fechas)
+                if (valA > valB) return direction === 1 ? 1 : -1;
+                if (valA < valB) return direction === 1 ? -1 : 1;
+            }
+            return 0;
+        });
     }
+
+    /**
+ * Aplica recortes al array de resultados (Paginación).
+ * @param records El array (ya filtrado y ordenado).
+ * @param limit Cantidad máxima de registros a devolver.
+ * @param skip Cantidad de registros a saltar (offset).
+ */
+    applyPagination(records: any[], limit?: number, skip?: number): any[] {
+        let startIndex = skip || 0;
+        let endIndex = records.length;
+
+        if (limit !== undefined) {
+            endIndex = startIndex + limit;
+        }
+
+        return records.slice(startIndex, endIndex);
+    }
+
 }

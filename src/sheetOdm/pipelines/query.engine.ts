@@ -1,16 +1,30 @@
 import { Injectable } from '@nestjs/common';
 import { IQueryEngine, QueryOptions } from '@sheetOdm/types/query.types';
-import { ExpressionEngine } from './expression.engine';
-import { AggregationEngine } from './aggregation.engine';
-import { ProjectionService } from './projection.service';
+import { ExpressionEngine } from '../engines/expression.engine';
+import { AggregationEngine } from '../engines/aggregation.engine';
+import { ProjectionService } from '../engines/projection.service';
+import { LookupStage } from '../engines/query/lookup';
+import { MatchStage, SortStage } from '../engines/query/match_sort_pagination';
+import { ProjectStage } from '../engines/query/projection';
+import { IQueryStage } from '../engines/query/IPipelineStage';
 
 @Injectable()
 export class QueryEngine implements IQueryEngine {
+    private stageRegistry: Map<string, IQueryStage>;
     constructor(
-        private readonly expressionEngine: ExpressionEngine,
-        private readonly aggregationEngine: AggregationEngine,
-        private readonly projectionService: ProjectionService,
-    ) { }
+        private readonly matchStage: MatchStage,
+        private readonly projectStage: ProjectStage,
+        private readonly sortStage: SortStage,
+        private readonly lookupStage: LookupStage,
+    ) {
+        // Registro centralizado
+        this.stageRegistry = new Map([
+            ['$match', this.matchStage],
+            ['$project', this.projectStage],
+            ['$sort', this.sortStage],
+            ['$lookup', this.lookupStage],
+        ]);
+    }
 
     /**
      * Ejecuta una consulta de filtrado, ordenamiento y paginación sobre una colección en memoria.
@@ -62,7 +76,22 @@ export class QueryEngine implements IQueryEngine {
     /**
      * Ejecuta un pipeline de agregación.
      */
-    async aggregate<T extends object>(data: T[], pipeline: any[]): Promise<any[]> {
-        return this.aggregationEngine.aggregate(data, pipeline);
+    public async aggregate(data: any[], pipeline: any[]): Promise<any[]> {
+        let result = [...data];
+
+        for (const stage of pipeline) {
+            const operator = Object.keys(stage)[0];
+            const config = stage[operator];
+            const handler = this.stageRegistry.get(operator);
+
+            if (!handler) {
+                throw new Error(`Operador no soportado en el pipeline: ${operator}`);
+            }
+
+            // Ejecución polimórfica (soporta sync y async)
+            result = await handler.execute(result, config);
+        }
+
+        return result;
     }
 }

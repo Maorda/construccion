@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { GoogleAutenticarService } from '@sheetOdm/services/auth.google.service';
 import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
-import { QueryEngine } from '@sheetOdm/engines/query.engine';
+import { QueryEngine } from '@sheetOdm/pipelines/query.engine';
 import type { DatabaseModuleOptions } from '@sheetOdm/interfaces/database.options.interface';
 import { ClassType, FilterQuery, QueryOptions, UpdateOptions } from '@sheetOdm/types/query.types';
 import { NamingStrategy } from '@sheetOdm/strategy/naming.strategy';
@@ -196,10 +196,10 @@ export class SheetsRepository<T extends object> {
     /**
      * Obtiene un único registro.
      */
-    /*async findOne(filter?: FilterQuery<T>, projection?: any): Promise<Partial<T> | null> {
+    async findOne(filter?: FilterQuery<T>, projection?: any): Promise<Partial<T> | null> {
         const results = await this.find(filter, { limit: 1, projection });
         return results.length > 0 ? results[0] : null;
-    }*/
+    }
 
 
     async save5(doc: SheetDocument<T>): Promise<SheetDocument<T>> {

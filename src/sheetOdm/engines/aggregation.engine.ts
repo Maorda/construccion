@@ -1,162 +1,280 @@
-import { Injectable } from '@nestjs/common';
-import { ExpressionEngine } from './expression.engine';
-import { ProjectionService } from './projection.service';
+import { Logger } from "@nestjs/common";
 
-@Injectable()
+import { ModuleRef } from "@nestjs/core";
+import { ExpressionEngine } from "./expression.engine";
+
 export class AggregationEngine {
     constructor(
-        private readonly expressionEngine: ExpressionEngine,
-        private readonly projectionService: ProjectionService,
-    ) {}
+        private expressionEngine: ExpressionEngine,
+        protected readonly moduleRef: ModuleRef,
+    ) { }
+    handleGroup(data: any[], config: any): any[] {
+        const { _id, ...accumulators } = config;
+        const groups = new Map<string, any>();
 
-    /**
-     * Ejecuta un pipeline de agregación secuencial sobre un conjunto de datos en memoria.
-     */
-    async aggregate<T extends object>(data: T[], pipeline: any[]): Promise<any[]> {
-        let currentResults: any[] = [...data];
+        for (const item of data) {
+            // Resolvemos el valor de la llave de grupo (ej: '$id_especialista')
+            const groupId = item[_id.substring(1)];
+
+            if (!groups.has(groupId)) {
+                groups.set(groupId, { _id: groupId });
+            }
+
+            const group = groups.get(groupId);
+
+            // Ejecutamos acumuladores ($sum, $avg, $count)
+            Object.keys(accumulators).forEach(key => {
+                const accConfig = accumulators[key];
+                const operator = Object.keys(accConfig)[0]; // ej: '$sum'
+                const field = accConfig[operator].substring(1); // ej: 'sueldo'
+
+                if (operator === '$sum') {
+                    group[key] = (group[key] || 0) + (Number(item[field]) || 0);
+                } else if (operator === '$count') {
+                    group[key] = (group[key] || 0) + 1;
+                }
+                // ... agregar más operadores como $avg, $max
+            });
+        }
+
+        return Array.from(groups.values());
+    }
+    handleUnwind(data: any[], path: string): any[] {
+        const field = path.startsWith('$') ? path.substring(1) : path;
+        const result: any[] = [];
+
+        for (const item of data) {
+            const arrayToUnwind = item[field];
+            if (Array.isArray(arrayToUnwind) && arrayToUnwind.length > 0) {
+                for (const subItem of arrayToUnwind) {
+                    result.push({ ...item, [field]: subItem });
+                }
+            } else {
+                // Si está vacío, decidimos si mantenerlo o filtrarlo (preservar nulos)
+                result.push({ ...item, [field]: null });
+            }
+        }
+        return result;
+    }
+    async handleLookup(currentData: any[], config: any): Promise<any[]> {
+        const { from, localField, foreignField, as } = config;
+
+        // 🟢 RESOLUCIÓN DINÁMICA DE REPOSITORIO (Convierte "ASISTENCIAS_DIARIAS" a "AsistenciasDiariasRepository")
+        const camelCase = from.toLowerCase().replace(/_([a-z])/g, (_, g) => g.toUpperCase());
+        const pascalCase = camelCase.charAt(0).toUpperCase() + camelCase.slice(1);
+        const repositoryToken = `${pascalCase}Repository`;
+
+        let foreignData: any[] = [];
+        try {
+            const foreignRepository = this.moduleRef.get(repositoryToken, { strict: false });
+
+            // Extraemos los datos a través del repositorio para asegurar que pasen por el GettersEngine
+            if (foreignRepository && typeof foreignRepository.findAllRaw === 'function') {
+                foreignData = await foreignRepository.findAllRaw();
+            } else if (foreignRepository && typeof foreignRepository.find === 'function') {
+                foreignData = await foreignRepository.find({}, { includeInactive: true });
+            }
+        } catch (error) {
+            // Fallback por si la pestaña secundaria no tiene un repositorio formal registrado en Nest
+            // Evita que caiga toda la consulta pesada
+            const logger = new Logger('AggregationEngine');
+            logger.error(`[Lookup Error] No se pudo resolver de forma segura el repositorio '${repositoryToken}' para la pestaña '${from}'`);
+            foreignData = [];
+        }
+
+        // 2. Creamos el ÍNDICE de forma segura sobre objetos de datos reales O(1)
+        const indexMap = this.createIndexMap(foreignData, foreignField);
+
+        // 3. Realizamos el cruce veloz sobre el hilo de la banda transportadora
+        return currentData.map(item => {
+            const localVal = String(item[localField] ?? '');
+            return {
+                ...item,
+                [as]: indexMap.get(localVal) || [] // Si no hay coincidencias, devuelve arreglo vacío
+            };
+        });
+    }
+    private createIndexMap(data: any[], key: string): Map<string, any[]> {
+        const index = new Map<string, any[]>();
+        for (const item of data) {
+            const val = String(item[key]);
+            if (!index.has(val)) index.set(val, []);
+            index.get(val).push(item);
+        }
+        return index;
+    }
+    async run(data: any[], pipeline: any[]): Promise<any[]> {
+        let result = [...data];
 
         for (const stage of pipeline) {
-            const keys = Object.keys(stage);
-            if (keys.length === 0) continue;
-
-            const operator = keys[0];
+            const operator = Object.keys(stage)[0];
             const config = stage[operator];
 
             switch (operator) {
                 case '$match':
-                    currentResults = currentResults.filter(item =>
-                        this.expressionEngine.evaluateFilter(item, config)
-                    );
+                    result = result.filter(item => this.applyMatch(item, config));
                     break;
-
+                case '$lookup':
+                    result = await this.executeLookup(result, config); // Implementa tu lógica de Map/Índice aquí
+                    break;
+                case '$unwind':
+                    result = this.executeUnwind(result, config);
+                    break;
+                case '$addFields':
                 case '$project':
-                    currentResults = currentResults.map(item =>
-                        this.projectionService.project(item, config)
-                    );
+                    result = result.map(item => ({
+                        ...item,
+                        ...this.expressionEngine.execute(item, config)
+                    }));
                     break;
-
-                case '$sort':
-                    currentResults = this.sort(currentResults, config);
-                    break;
-
-                case '$skip':
-                    const skipCount = Number(config);
-                    currentResults = currentResults.slice(skipCount);
-                    break;
-
-                case '$limit':
-                    const limitCount = Number(config);
-                    currentResults = currentResults.slice(0, limitCount);
-                    break;
-
                 case '$group':
-                    currentResults = this.group(currentResults, config);
+                    result = this.executeGroup(result, config);
                     break;
-
-                default:
-                    // Si hay un operador no soportado, lo ignoramos de forma segura
+                case '$sort':
+                    result = this.executeSort(result, config);
                     break;
             }
         }
+        return result;
+    }
+    private applyMatch(item: any, query: Record<string, any>): boolean {
+        // Recorremos cada condición del filtro (ej: { estado: 'ACTIVO', sueldo: { $gt: 1500 } })
+        return Object.entries(query).every(([key, condition]) => {
+            const value = item[key];
 
-        return currentResults;
+            // Si la condición es un objeto (operador como $gt, $in, $ne)
+            if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
+                const operator = Object.keys(condition)[0];
+                const target = condition[operator];
+
+                switch (operator) {
+                    case '$gt': return value > target;
+                    case '$gte': return value >= target;
+                    case '$lt': return value < target;
+                    case '$lte': return value <= target;
+                    case '$ne': return value !== target;
+                    case '$in': return Array.isArray(target) && target.includes(value);
+                    case '$nin': return Array.isArray(target) && !target.includes(value);
+                    case '$regex': return new RegExp(target, 'i').test(String(value));
+                    default: return false;
+                }
+            }
+
+            // Comparación directa de igualdad
+            return value === condition;
+        });
+    }
+    private executeUnwind(data: any[], path: string): any[] {
+        // Quitamos el '$' si viene en el path (ej: '$cuadrilla' -> 'cuadrilla')
+        const field = path.startsWith('$') ? path.substring(1) : path;
+        const result: any[] = [];
+
+        for (const item of data) {
+            const arrayToUnwind = item[field];
+
+            // Si no es un arreglo o está vacío, podemos optar por eliminar el registro
+            // o mantenerlo como null (comportamiento por defecto: eliminar si no hay elementos)
+            if (Array.isArray(arrayToUnwind) && arrayToUnwind.length > 0) {
+                for (const subItem of arrayToUnwind) {
+                    result.push({
+                        ...item,
+                        [field]: subItem // Sustituimos el arreglo por el elemento individual
+                    });
+                }
+            } else {
+                // Opcional: conservar el registro original con el campo en null 
+                // (equivalente a preserveNullAndEmptyArrays: true en MongoDB)
+                result.push({ ...item, [field]: null });
+            }
+        }
+        return result;
     }
 
-    private sort(data: any[], config: Record<string, number>): any[] {
-        const sorted = [...data];
-        const fields = Object.keys(config);
-        if (fields.length === 0) return sorted;
+    private executeGroup(data: any[], config: any): any[] {
+        const { _id, ...accumulators } = config;
+        const groups = new Map<string, any>();
 
-        sorted.sort((a, b) => {
-            for (const field of fields) {
-                const order = config[field]; // 1 para ASC, -1 para DESC
-                const valA = a[field];
-                const valB = b[field];
+        for (const item of data) {
+            // Resolvemos el ID de grupo (puede ser un campo o null para agrupar todo)
+            const groupId = _id && typeof _id === 'string' && _id.startsWith('$')
+                ? item[_id.substring(1)]
+                : 'root';
 
-                if (valA === valB) continue;
-                if (valA === undefined || valA === null) return 1;
-                if (valB === undefined || valB === null) return -1;
+            if (!groups.has(groupId)) {
+                groups.set(groupId, { _id: groupId });
+            }
 
-                if (valA < valB) return order === 1 ? -1 : 1;
-                if (valA > valB) return order === 1 ? 1 : -1;
+            const group = groups.get(groupId);
+
+            // Procesamos acumuladores
+            for (const [key, accConfig] of Object.entries(accumulators)) {
+                const operator = Object.keys(accConfig as object)[0];
+                const fieldPath = (accConfig as any)[operator];
+                const value = typeof fieldPath === 'string' && fieldPath.startsWith('$')
+                    ? item[fieldPath.substring(1)]
+                    : null;
+
+                switch (operator) {
+                    case '$sum':
+                        group[key] = (group[key] || 0) + (Number(value) || 0);
+                        break;
+                    case '$count':
+                        group[key] = (group[key] || 0) + 1;
+                        break;
+                    case '$avg':
+                        group[`${key}_sum`] = (group[`${key}_sum`] || 0) + (Number(value) || 0);
+                        group[`${key}_cnt`] = (group[`${key}_cnt`] || 0) + 1;
+                        group[key] = group[`${key}_sum`] / group[`${key}_cnt`];
+                        break;
+                    case '$push':
+                        if (!group[key]) group[key] = [];
+                        group[key].push(item);
+                        break;
+                }
+            }
+        }
+
+        return Array.from(groups.values()).map(g => {
+            // Limpieza de auxiliares de AVG
+            Object.keys(g).forEach(k => { if (k.includes('_sum') || k.includes('_cnt')) delete g[k]; });
+            return g;
+        });
+    }
+    private executeSort(data: any[], sortConfig: Record<string, 1 | -1>): any[] {
+        return [...data].sort((a, b) => {
+            for (const key in sortConfig) {
+                const dir = sortConfig[key];
+                if (a[key] > b[key]) return dir;
+                if (a[key] < b[key]) return -dir;
             }
             return 0;
         });
-
-        return sorted;
     }
 
-    private group(data: any[], config: any): any[] {
-        const idField = config._id; // Puede ser un path a campo '$edad' o null/constante
-        const accumulatorKeys = Object.keys(config).filter(key => key !== '_id');
+    private async executeLookup(data: any[], config: LookupConfig): Promise<any[]> {
+        // Obtenemos el repositorio de la entidad destino (ej: 'PeonesRepository')
+        // El nombre debe seguir una convención o estar registrado como provider
+        const foreignRepository = this.moduleRef.get(`${config.from}Repository`, { strict: false });
 
-        const groups = new Map<any, any[]>();
-
-        // 1. Agrupar los datos por la clave identificada
-        for (const item of data) {
-            let keyVal: any;
-
-            if (idField === null || idField === undefined) {
-                keyVal = null;
-            } else if (typeof idField === 'string' && idField.startsWith('$')) {
-                const realField = idField.substring(1);
-                keyVal = item[realField];
-            } else {
-                keyVal = idField;
-            }
-
-            if (!groups.has(keyVal)) {
-                groups.set(keyVal, []);
-            }
-            groups.get(keyVal)!.push(item);
+        if (!foreignRepository) {
+            throw new Error(`Repositorio para ${config.from} no encontrado.`);
         }
 
-        const results: any[] = [];
+        const foreignData = await foreignRepository.findAllRaw();
 
-        // 2. Procesar los acumuladores para cada grupo
-        groups.forEach((groupItems, groupKey) => {
-            const groupResult: any = { _id: groupKey };
-
-            for (const accKey of accumulatorKeys) {
-                const accConfig = config[accKey];
-                const accOp = Object.keys(accConfig)[0];
-                const expr = accConfig[accOp];
-
-                let fieldName = '';
-                if (typeof expr === 'string' && expr.startsWith('$')) {
-                    fieldName = expr.substring(1);
-                }
-
-                const values = groupItems
-                    .map(item => (fieldName ? Number(item[fieldName]) : 1))
-                    .filter(val => !isNaN(val));
-
-                switch (accOp) {
-                    case '$sum':
-                        groupResult[accKey] = values.reduce((sum, val) => sum + val, 0);
-                        break;
-                    case '$avg':
-                        groupResult[accKey] = values.length > 0 
-                            ? values.reduce((sum, val) => sum + val, 0) / values.length 
-                            : 0;
-                        break;
-                    case '$min':
-                        groupResult[accKey] = values.length > 0 ? Math.min(...values) : null;
-                        break;
-                    case '$max':
-                        groupResult[accKey] = values.length > 0 ? Math.max(...values) : null;
-                        break;
-                    case '$push':
-                        groupResult[accKey] = groupItems.map(item => fieldName ? item[fieldName] : item);
-                        break;
-                    default:
-                        groupResult[accKey] = null;
-                }
-            }
-
-            results.push(groupResult);
+        // ARTIMAÑA DEL ÍNDICE: Creamos el Map para búsqueda O(1)
+        const index = new Map<string, any[]>();
+        foreignData.forEach(row => {
+            const key = String(row[config.foreignField]);
+            if (!index.has(key)) index.set(key, []);
+            index.get(key).push(row);
         });
 
-        return results;
+        return data.map(item => ({
+            ...item,
+            [config.as]: index.get(String(item[config.localField])) || []
+        }));
     }
+
+
 }

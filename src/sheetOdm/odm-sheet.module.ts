@@ -15,7 +15,7 @@ import { CompareEngine } from '@sheetOdm/engines/compare.engine';
 import { ExpressionEngine } from '@sheetOdm/engines/expression.engine';
 import { ProjectionService } from '@sheetOdm/engines/projection.service';
 import { AggregationEngine } from '@sheetOdm/engines/aggregation.engine';
-import { QueryEngine } from '@sheetOdm/engines/query.engine';
+import { QueryEngine } from '@sheetOdm/pipelines/query.engine';
 
 // Tipos, Creador de Modelos y Opciones
 import { ClassType } from '@sheetOdm/types/query.types';
