@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { IQueryStage } from "@sheetOdm/engines/query/IPipelineStage";
+import { IQueryStage } from "./IqueryStages";
 import { GroupAccumulator, GroupConfig } from "../types";
 
 
@@ -29,7 +29,43 @@ export class GroupStage implements IQueryStage {
         }
         return result;
     }
+    validate(config: any): void {
+        // 1. Verificación básica de objeto
+        if (!config || typeof config !== 'object') {
+            throw new Error("$group requiere un objeto de configuración");
+        }
 
+        // 2. _id es obligatorio
+        if (!('_id' in config)) {
+            throw new Error("$group requiere definir un campo '_id'");
+        }
+
+        // 3. Definimos los operadores permitidos
+        const validAccumulators = ['$sum', '$avg', '$min', '$max', '$count', '$push'];
+
+        // 4. Validar acumuladores
+        for (const [key, accumulator] of Object.entries(config)) {
+            if (key === '_id') continue;
+
+            // Cada acumulador debe ser un objeto: { $sum: "$campo" }
+            if (typeof accumulator !== 'object' || accumulator === null) {
+                throw new Error(`$group: el acumulador '${key}' debe ser un objeto.`);
+            }
+
+            const operator = Object.keys(accumulator as any)[0];
+
+            if (!validAccumulators.includes(operator)) {
+                throw new Error(`$group: operador '${operator}' no soportado en el acumulador '${key}'.`);
+            }
+
+            // Opcional: Validar que el valor sea un string (el campo a procesar)
+            // excepto para $count que a veces se usa diferente
+            const target = (accumulator as any)[operator];
+            if (operator !== '$count' && typeof target !== 'string') {
+                throw new Error(`$group: el operador '${operator}' en '${key}' espera un campo string (ej: '$precio').`);
+            }
+        }
+    }
     private applyAccumulator(acc: GroupAccumulator, items: any[]): any {
         const field = Object.keys(acc)[0];
         const targetPath = (acc as any)[field].replace('$', '');

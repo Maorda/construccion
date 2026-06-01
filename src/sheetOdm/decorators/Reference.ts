@@ -33,15 +33,13 @@ export function Reference(
         const classConstructor = target.constructor;
         const propertyName = propertyKey.toString();
 
-        // 1. Resolver el targetEntity (soporta funciones diferidas para evitar referencias circulares)
         const targetEntityFn = typeof targetEntity === 'function' && !targetEntity.prototype
             ? (targetEntity as () => EntityClass)
             : () => targetEntity as EntityClass;
 
-        // 2. Configuración de la Relación (Lado Hijo)
         const relationConfig = {
             targetEntity: targetEntityFn,
-            isMany: false, // Es una relación 1 a 1 (pertenece a un padre)
+            isMany: false,
             type: 'reference',
             joinColumn: options.joinColumn,
             required: options.required ?? false,
@@ -49,42 +47,33 @@ export function Reference(
             propertyName
         };
 
-        // 3. REGISTRO DE RELACIÓN (A salvo de bugs de herencia)
-        let relationsList = Reflect.getOwnMetadata(SHEETS_RELATIONS_LIST, classConstructor);
+        // 🔥 CORRECCIÓN: Registrar la lista en el PROTOTIPO (target) de forma segura
+        let relationsList = Reflect.getOwnMetadata(SHEETS_RELATIONS_LIST, target);
         if (!relationsList) {
-            const parentList = Reflect.getMetadata(SHEETS_RELATIONS_LIST, classConstructor) || [];
+            const parentList = Reflect.getMetadata(SHEETS_RELATIONS_LIST, target) || [];
             relationsList = [...parentList];
         }
         if (!relationsList.includes(propertyName)) {
             relationsList.push(propertyName);
-            Reflect.defineMetadata(SHEETS_RELATIONS_LIST, relationsList, classConstructor);
+            Reflect.defineMetadata(SHEETS_RELATIONS_LIST, relationsList, target);
         }
 
-        // Metadato individual de la propiedad relacional
         Reflect.defineMetadata(SHEETS_ALL_RELATIONS, relationConfig, target, propertyName);
 
-        // ----------------------------------------------------------------------
-        // 🚀 MAGIA AUTOMÁTICA: Registrar el `joinColumn` como una columna física
-        // ----------------------------------------------------------------------
-        // Para que Google Sheets sepa que tiene que guardar el ID, el joinColumn 
-        // necesita existir en la lista de columnas como un string. Lo inyectamos 
-        // automáticamente para que el desarrollador no tenga que escribir @Column() extra.
-
+        // [Tu magia automática de inyección de columnas físicas en classConstructor se mantiene intacta aquí abajo...]
         let columnsList = Reflect.getOwnMetadata(SHEETS_COLUMN_LIST, classConstructor);
         if (!columnsList) {
             const parentCols = Reflect.getMetadata(SHEETS_COLUMN_LIST, classConstructor) || [];
             columnsList = [...parentCols];
         }
-
         if (!columnsList.includes(options.joinColumn)) {
             columnsList.push(options.joinColumn);
             Reflect.defineMetadata(SHEETS_COLUMN_LIST, columnsList, classConstructor);
 
-            // Registramos sus detalles para el motor de persistencia
             const details = Reflect.getOwnMetadata(SHEETS_COLUMN_DETAILS, classConstructor) || {};
             details[options.joinColumn] = {
                 name: options.joinColumn,
-                type: 'string', // Los IDs suelen ser strings o UUIDs
+                type: 'string',
                 required: options.required ?? false,
                 isDeleteControl: false,
                 isAutoIncrement: false

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
 import { QueryEngine } from '@sheetOdm/pipelines/query.engine';
-import { ClassType, FilterQuery, QueryOptions } from '@sheetOdm/types/query.types';
+import { ClassType, FilterQuery, FindOneAndUpdateOptions, QueryOptions, UpdateQuery } from '@sheetOdm/types/query.types';
 import { ROW_INDEX_SYMBOL, SHEETS_REPOSITORY_MARKER, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants';
 import * as Joi from 'joi';
 import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
@@ -12,12 +12,15 @@ import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator
 
 import { ModuleRef } from '@nestjs/core';
 import { getRepositoryToken } from '@sheetOdm/utils/helper';
-import { SheetCollection } from '@sheetOdm/wrapper/sheetCollection';
-import { SheetDocument } from '@sheetOdm/wrapper/sheetdocument';
+import { SheetDocument } from '@sheetOdm/wrapper/sheetDocument';
+import { UnitOfWork } from '@sheetOdm/services/UnitOfWork';
+
+
 // Registro global auxiliar para resolver inyecciones circulares entre repositorios en populate
 
 @Injectable()
 export class SheetsRepository<T extends object> {
+
     readonly logger = new Logger(SheetsRepository.name);
     public readonly [SHEETS_REPOSITORY_MARKER] = true;
     public headers: string[] = [];
@@ -25,13 +28,14 @@ export class SheetsRepository<T extends object> {
     constructor(
 
         protected readonly metadataRegistry: MetadataRegistry,
-        protected readonly queryEngine: QueryEngine<T>,
+        protected readonly queryEngine: QueryEngine,
         public readonly gateway: SheetDataGateway,
         public readonly entityClass: ClassType<T>,
         protected readonly relationManager: RelationManager,
         protected readonly dataMapper: DataMapper,
         private readonly moduleRef: ModuleRef,
-        protected readonly hydrator: SheetDocumentHydrator
+        protected readonly hydrator: SheetDocumentHydrator,
+        protected readonly unitOfWork: UnitOfWork
 
     ) {
 
@@ -68,20 +72,38 @@ export class SheetsRepository<T extends object> {
         const headerRows = await this.gateway.getRange(`${this.sheetName}!A1:Z1`);
         return headerRows[0] ? headerRows[0].map((h: any) => String(h).trim().toUpperCase()) : [];
     }
-
-    async find(filter?: FilterQuery<T>, options?: QueryOptions<T>): Promise<SheetCollection<T>[]> {
+    async find(filter?: FilterQuery<T>, options?: QueryOptions<T>): Promise<SheetDocument<T>[]> {
         const rawItems = await this.fetchRawData(options?.includeInactive);
         const processedItems = await this.queryEngine.execute(rawItems, filter, options);
 
-        return processedItems
-            .map(raw => this.hydrator.hydrateAndShield(this.entityClass, this, raw, {
-                new: false,
-                customConstructor: (options as any)?.customConstructor // 🔥 Inyección dinámica del Modelo prototípico
-            }))
-            .filter((doc): doc is SheetCollection<T> => doc !== null);
+        return processedItems.map(raw => {
+            const pk = raw[this.getPrimaryKeyField()];
+            let doc = this.unitOfWork.get(pk);
+
+            if (!doc) {
+                if (options?.customConstructor) {
+                    // 🔥 SOLUCIÓN: Enviamos los 3 argumentos requeridos por ConstructorSignature
+                    // raw = data, this = repo, false = isNew (ya existe en DB)
+                    doc = new options.customConstructor(raw, this, false);
+                    doc.markAsSaved(raw[ROW_INDEX_SYMBOL]);
+                    doc.setVersion(raw.version || 0);
+                } else {
+                    // Fallback al hydrator si se usa el repositorio directamente sin el Model
+                    doc = this.hydrator.hydrateAndShield(this.entityClass, this, raw);
+                }
+
+                if (pk) this.unitOfWork.register(doc, pk);
+            }
+            return doc;
+        });
     }
 
-    async findOne(filter?: FilterQuery<T>, options?: Pick<QueryOptions<T>, 'includeInactive'>): Promise<SheetCollection<T> | null> {
+
+
+    async findOne(
+        filter?: FilterQuery<T>,
+        options?: Pick<QueryOptions<T>, 'includeInactive' | 'customConstructor'>
+    ): Promise<SheetDocument<T> | null> {
         const results = await this.find(filter, { limit: 1, ...options });
         return results.length > 0 ? results[0] : null;
     }
@@ -96,34 +118,54 @@ export class SheetsRepository<T extends object> {
         }
     }
 
-    create(data: Partial<T>): SheetCollection<T> {
-        const doc = this.hydrator.hydrateAndShield(this.entityClass, this, data, { new: true });
-        if (!doc) {
-            throw new Error(`[ODM] No se pudo crear el documento virtual para ${this.entityClass.name}`);
+    create(data: Partial<T>): SheetDocument<T> {
+        return this.hydrator.hydrateAndShield(this.entityClass, this, data, { new: true })!;
+    }
+
+    async save(doc: SheetDocument<T>): Promise<SheetDocument<T>> {
+        const sheetName = this.sheetName; // Usando el getter existente
+        const rowNumber = doc[ROW_INDEX_SYMBOL]; // Usando el símbolo correcto
+
+        // 1. CASO INSERT: Nuevo registro
+        if (!rowNumber) {
+            const initialVersion = 1;
+            // Usamos prepareDataWithVersion también aquí para asegurar el orden de las columnas
+            const valuesToSave = this.prepareDataWithVersion(doc.toObject(), initialVersion);
+
+            const newRowIndex = await this.gateway.appendRow(sheetName, valuesToSave);
+
+            doc.markAsSaved(newRowIndex);
+            doc.setVersion(initialVersion);
+            return doc;
         }
+
+        // 2. CASO UPDATE: Bloqueo Optimista
+        // A. Obtenemos datos crudos para validar la versión que existe actualmente en la nube
+        const currentData = await this.gateway.getRowData(sheetName, rowNumber);
+        const currentVersionInSheet = this.extractVersionFromRow(currentData);
+
+        // B. Validación de Concurrencia
+        if (currentVersionInSheet !== doc.version) {
+            throw new Error(
+                `Concurrency Conflict: La fila ${rowNumber} fue modificada por otro proceso. ` +
+                `Tu versión: ${doc.version}, Versión en Sheets: ${currentVersionInSheet}`
+            );
+        }
+
+        // C. Si las versiones coinciden, preparamos y guardamos
+        const nextVersion = doc.version + 1;
+        const valuesToSave = this.prepareDataWithVersion(doc.toObject(), nextVersion);
+
+        await this.gateway.updateRow(sheetName, rowNumber, valuesToSave);
+
+        // D. Actualizamos estado local
+        doc.markAsSaved(rowNumber);
+        doc.setVersion(nextVersion);
+
         return doc;
     }
 
-    async save(doc: SheetCollection<T>): Promise<SheetCollection<T>> {
-        const isNewDocument = (doc as any)._isNew;
-        const validatedData = this.validateWithJoi(doc.toObject());
-
-        const headers = await this.getCurrentSheetHeaders();
-        const flatRow = this.dataMapper.toFlatRow(validatedData, this.entityClass, headers);
-
-        let assignedRowNumber = doc[ROW_INDEX_SYMBOL];
-
-        if (isNewDocument || !assignedRowNumber) {
-            assignedRowNumber = await this.gateway.appendRow(this.sheetName, flatRow);
-        } else {
-            await this.gateway.updateRow(this.sheetName, assignedRowNumber, flatRow);
-        }
-
-        doc.markAsSaved(assignedRowNumber);
-        return doc;
-    }
-
-    async update(filter: FilterQuery<T>, updateData: Partial<T>): Promise<SheetCollection<T> | null> {
+    async update(filter: FilterQuery<T>, updateData: Partial<T>): Promise<SheetDocument<T> | null> {
         const doc = await this.findOne(filter);
         if (!doc) return null;
 
@@ -138,39 +180,53 @@ export class SheetsRepository<T extends object> {
      * 🎯 SINTONÍA ESTILO MONGOOSE: findOneAndUpdate
      * Modifica atómicamente propiedades en memoria basándose en comandos estructurales ($set, $inc)
      */
-    async findOneAndUpdate(
+    async findOneAndUpdate<U extends SheetDocument<T> = SheetDocument<T>>(
         filter: FilterQuery<T>,
-        update: any,
-        options?: { upsert?: boolean; new?: boolean; customConstructor?: any }
-    ): Promise<SheetCollection<T> | null> {
-        const found = await this.findOne(filter, { customConstructor: options?.customConstructor } as any);
+        update: UpdateQuery<T>,
+        options: FindOneAndUpdateOptions<T, U> = {}
+    ): Promise<U | null> {
+        // 1. Buscamos (Ahora el tipado de findOne permite pasar el customConstructor de forma transparente)
+        const found = await this.findOne(filter, {
+            includeInactive: options.includeInactive,
+            customConstructor: options.customConstructor as any
+        }) as U | null;
 
         if (!found) {
-            if (options?.upsert) {
+            if (options.upsert) {
                 const createData = { ...filter, ...(update.$set || update) };
-                delete (createData as any).__row;
-                const newDoc = this.create(createData);
-                return await this.save(newDoc);
+                const newDoc = this.create(createData) as U;
+                return await newDoc.save() as U;
             }
             return null;
         }
 
+        // 2. Aplicamos cambios con los operadores
         const updatePayload = update.$set || update;
 
-        // Soporte nativo para incrementos numéricos continuos
         if (update.$inc) {
             Object.keys(update.$inc).forEach(key => {
-                const currentVal = Number(found[key] || 0);
-                updatePayload[key] = currentVal + Number(update.$inc[key]);
+                const currentVal = Number((found as any)[key] || 0);
+                const incValue = Number(update.$inc![key as keyof T] || 0);
+
+                (updatePayload as any)[key] = currentVal + incValue;
             });
         }
 
         Object.assign(found, updatePayload);
-        const saved = await this.save(found);
 
-        return options?.new !== false ? saved : found;
+        // 3. Persistimos
+        const saved = await found.save();
+
+        return options.new !== false ? (saved as U) : found;
     }
-
+    public getRowIndexById(id: string | number): number {
+        const primaryKeyProp = this.metadataRegistry.getPrimaryKeyField(this.entityClass);
+        const index = this.entities.findIndex(
+            (item) => String((item as any)[primaryKeyProp]) === String(id)
+        );
+        // +2 porque en Google Sheets la fila 1 es encabezado y el array empieza en 0
+        return index === -1 ? -1 : index + 2;
+    }
     async delete(filter: FilterQuery<T>): Promise<boolean> {
         const doc = await this.findOne(filter);
         if (!doc) return false;
@@ -189,7 +245,7 @@ export class SheetsRepository<T extends object> {
         return true;
     }
 
-    private async processCascadeDelete(doc: SheetCollection<T>): Promise<void> {
+    private async processCascadeDelete(doc: SheetDocument<T>): Promise<void> {
         const relations = this.metadataRegistry.getRelationsList(this.entityClass);
 
         for (const relationField of relations) {
@@ -261,7 +317,78 @@ export class SheetsRepository<T extends object> {
         const headers = await this.getCurrentSheetHeaders();
         return this.dataMapper.toFlatRow(doc.toObject(), this.entityClass, headers);
     }
+    async flush(): Promise<void> {
+        // 🔥 SOLUCIÓN: Extraer los documentos dirty desde el UnitOfWork
+        const allDocs = this.unitOfWork.getAll();
+        const dirtyDocs = allDocs.filter((doc: any) => doc.isDirty);
 
+        if (dirtyDocs.length === 0) {
+            this.logger.debug(`[Flush] No hay cambios pendientes. Saltando.`);
+            return;
+        }
+
+        this.logger.debug(`[Flush] Persistiendo ${dirtyDocs.length} documentos...`);
+
+        await Promise.all(dirtyDocs.map(async (doc) => {
+            try {
+                await doc.save(); // Llama al save() del documento, que a su vez llama a este repositorio
+                this.logger.debug(`[Flush] Documento guardado exitosamente.`);
+            } catch (error: any) {
+                this.logger.error(`[Flush] Error al guardar documento: ${error.message}`);
+                throw error;
+            }
+        }));
+    }
+
+    /**
+ * 1. Extrae la versión desde el array crudo de Google Sheets.
+ * @param rowData - El array de celdas obtenido de la hoja (ej: ["ID-1", "Obrero1", 5])
+ * @returns El número de versión actual en la hoja.
+ */
+    private extractVersionFromRow(rowData: any[]): number {
+        const versionField = this.metadataRegistry.getVersionField(this.entityClass);
+
+        // Si no definiste un campo @Version en tu entidad, el bloqueo optimista se deshabilita
+        if (!versionField) return 0;
+
+        const columnMap = this.metadataRegistry.getColumnMap(this.entityClass);
+        const index = columnMap[versionField];
+
+        if (index === undefined) {
+            throw new Error(
+                `Error de configuración: La entidad ${this.entityClass.name} tiene un decorador @Version en '${versionField}' ` +
+                `pero no está mapeado como una @Column válida.`
+            );
+        }
+
+        // Retornamos el valor de la celda. Si viene vacío/undefined, asumimos versión 0
+        return parseInt(rowData[index] || 0, 10);
+    }
+
+    /**
+     * 2. Prepara el array ordenado para Google Sheets inyectando la nueva versión.
+     * @param dataObject - El objeto plano del documento (toObject()).
+     * @param newVersion - El número de versión que se escribirá (version + 1).
+     * @returns Array ordenado listo para ser enviado a Google Sheets.
+     */
+    private prepareDataWithVersion(dataObject: any, newVersion: number): any[] {
+        const versionField = this.metadataRegistry.getVersionField(this.entityClass);
+
+        // Obtenemos la lista ordenada de columnas FÍSICAS (ignora virtuales y subcolecciones)
+        const orderedColumns = this.metadataRegistry.getColumnList(this.entityClass);
+
+        return orderedColumns.map(columnName => {
+            // Si esta es la columna de versión, inyectamos el valor incrementado
+            if (columnName === versionField) {
+                return newVersion;
+            }
+
+            // Obtenemos el valor del objeto. 
+            // Usamos null si el valor no existe para mantener la estructura de la fila.
+            // Nos aseguramos de acceder a dataObject[columnName]
+            return dataObject[columnName] ?? null;
+        });
+    }
 
 }
 

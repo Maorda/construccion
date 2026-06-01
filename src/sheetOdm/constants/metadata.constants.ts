@@ -29,3 +29,4 @@ export const SHEETS_REPOSITORY_MARKER = Symbol.for('__isSheetsRepository');
 export const SHEETS_DTO = Symbol('sheets:dto');
 export const ROW_INDEX_SYMBOL = Symbol('__row');
 export const SHEETS_VIRTUAL_COLUMNS = Symbol('SHEETS_VIRTUAL_COLUMNS');
+export const SHEETS_VERSION_FIELD = Symbol('sheets:version_field');

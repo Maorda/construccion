@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CompareEngine } from './compare.engine';
+
 import dayjs from 'dayjs';
 // Usamos require para evitar el error de compilación de módulos, 
 // pero mantenemos la lógica de tipos de Day.js
@@ -7,6 +7,7 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
+import { ModuleRef } from '@nestjs/core';
 // Extendemos dayjs
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -17,7 +18,8 @@ dayjs.extend(weekOfYear);
 export class ExpressionEngine {
     private readonly logger = new Logger(ExpressionEngine.name);
     constructor(
-        private readonly compareEngine: CompareEngine
+        private readonly compareEngine: CompareEngine,
+        private readonly moduleRef: ModuleRef,
     ) { }
     /**
      * 🟢 MÉTODO PRINCIPAL (PUNTO DE ENTRADA DE PROYECCIONES)
@@ -34,14 +36,12 @@ export class ExpressionEngine {
             if (this.isOperatorObject(expression)) {
                 const operatorKey = Object.keys(expression)[0];
                 result[key] = this.runOperator(operatorKey, expression[operatorKey], record);
-            } else if (expression && typeof expression === 'object') {
-                result[key] = this.evaluate(expression, record);
             } else {
                 result[key] = this.evaluate(expression, record);
             }
         }
         return result;
-    };
+    }
 
     private isOperatorObject(obj: any): boolean {
         if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
@@ -49,9 +49,8 @@ export class ExpressionEngine {
         return keys.length === 1 && keys[0].startsWith('$');
     }
 
-
     /**
-     * Evalúa un filtro completo sobre un objeto de registro.
+     * Evalúa condiciones lógicas completas ($and, $or, etc.) para etapas de filtrado ($match).
      */
     evaluateFilter<T extends object>(item: T, filter: any): boolean {
         if (!filter || Object.keys(filter).length === 0) {
@@ -61,7 +60,6 @@ export class ExpressionEngine {
         for (const key of Object.keys(filter)) {
             const condition = filter[key];
 
-            // 1. Operadores lógicos de nivel raíz
             if (key === '$and') {
                 if (!Array.isArray(condition)) return false;
                 if (!condition.every(subFilter => this.evaluateFilter(item, subFilter))) return false;
@@ -86,7 +84,6 @@ export class ExpressionEngine {
                 continue;
             }
 
-            // 2. Rutas anidadas o propiedades simples (ej: 'edad' o 'obrero.dni')
             const value = this.getNestedValue(item, key);
             if (!this.compareEngine.evaluateValue(value, condition)) {
                 return false;
@@ -96,10 +93,6 @@ export class ExpressionEngine {
         return true;
     }
 
-    /**
-     * Resuelve valores para propiedades anidadas utilizando notación de puntos.
-     * Ejemplo: getNestedValue({ obrero: { dni: '123' } }, 'obrero.dni') -> '123'
-     */
     private getNestedValue(obj: any, path: string): any {
         if (!obj) return undefined;
         if (!path.includes('.')) return obj[path];
@@ -113,9 +106,9 @@ export class ExpressionEngine {
             }
             current = current[part];
         }
-
         return current;
     }
+
     public evaluate(expression: any, record: any): any {
         if (typeof expression === 'string' && expression.startsWith('$')) {
             const fieldName = expression.substring(1);
@@ -136,6 +129,7 @@ export class ExpressionEngine {
 
         return expression;
     }
+
     private runOperator(op: string, config: any, record: any): any {
         const handler = this.operatorsRegistry[op];
         if (!handler) {
@@ -144,11 +138,9 @@ export class ExpressionEngine {
         }
         return handler(config, record);
     }
-    private readonly operatorsRegistry: Record<string, (config: any, record: any) => any> = {
 
-        // =========================================================================
-        // 1. OPERADORES LÓGICOS Y DE COMPARACIÓN (De: operators.comparations.util.ts)
-        // =========================================================================
+    private readonly operatorsRegistry: Record<string, (config: any, record: any) => any> = {
+        // Lógicos y Comparación
         '$eq': (config, record) => this.evaluate(config[0], record) === this.evaluate(config[1], record),
         '$ne': (config, record) => this.evaluate(config[0], record) !== this.evaluate(config[1], record),
         '$gt': (config, record) => Number(this.evaluate(config[0], record)) > Number(this.evaluate(config[1], record)),
@@ -179,32 +171,31 @@ export class ExpressionEngine {
             return condition ? this.evaluate(config.then ?? config[1], record) : this.evaluate(config.else ?? config[2], record);
         },
 
-        // =========================================================================
-        // 2. OPERADORES MATEMÁTICOS (De: operators.math.util.ts)
-        // =========================================================================
+        // Operadores de Arreglo / Estructura (NUEVO: Para soportar conteos en relaciones)
+        '$size': (config, record) => {
+            const target = this.evaluate(config, record);
+            return Array.isArray(target) ? target.length : 0;
+        },
+
+        // Matemáticos
         '$multiply': (config, record) => {
             if (!Array.isArray(config)) return 0;
             return config.reduce((acc, curr) => acc * (Number(this.evaluate(curr, record)) || 0), 1);
         },
-
         '$inc': (config, record) => {
             const base = Number(this.evaluate(config.current ?? config[0], record)) || 0;
             const val = Number(this.evaluate(config.val ?? config[1], record)) || 0;
             return base + val;
         },
-
         '$minMax': (config, record) => {
             const current = this.evaluate(config.current ?? config[0], record);
             const target = Number(this.evaluate(config.target ?? config[1], record) ?? 0);
             const type = this.evaluate(config.type ?? config[2], record) || 'sum';
-
             if (current === undefined || current === null || current === '') return target;
             const currentNum = Number(current);
             if (isNaN(currentNum)) return target;
-
             return type === 'min' ? Math.min(currentNum, target) : Math.max(currentNum, target);
         },
-
         '$round': (config, record) => {
             const val = parseFloat(this.evaluate(config.value ?? config[0], record));
             const decimals = Number(this.evaluate(config.decimals ?? config[1], record)) || 2;
@@ -212,7 +203,6 @@ export class ExpressionEngine {
             const factor = Math.pow(10, decimals);
             return Math.round(val * factor) / factor;
         },
-
         '$math': (config, record) => {
             const expression = this.evaluate(config, record);
             if (!expression || typeof expression !== 'string') return 0;
@@ -220,10 +210,7 @@ export class ExpressionEngine {
                 const resolved = expression.replace(/\$([a-zA-Z0-9_]+)/g, (_, field) => {
                     return `(${Number(record && record[field] !== undefined ? record[field] : 0)})`;
                 });
-
-                // 🟢 SOLUCIÓN: Movimos el guion (-) al final de los corchetes para que no genere rangos falsos
                 const safeExpression = resolved.replace(/[^0-9+\-*/().\s,Mathabsroundceilfloor-]/g, '');
-
                 return Function(`"use strict"; return (${safeExpression})`)();
             } catch (error) {
                 console.error(`[MathHandler] Error: ${expression}`, error);
@@ -231,9 +218,7 @@ export class ExpressionEngine {
             }
         },
 
-        // =========================================================================
-        // 3. MUTADORES DE CADENA (De: operators.mutation.util.ts)
-        // =========================================================================
+        // Mutadores de Cadena
         '$upper': (config, record) => String(this.evaluate(config, record) || '').toUpperCase(),
         '$trim': (config, record) => String(this.evaluate(config, record) || '').trim(),
         '$concat': (config, record) => {
@@ -241,9 +226,7 @@ export class ExpressionEngine {
             return parts.map(p => String(this.evaluate(p, record) ?? '')).join('');
         },
 
-        // =========================================================================
-        // 4. TIEMPO Y FECHAS (De: operators.getters.ts & expression/mutation)
-        // =========================================================================
+        // Fechas y Tiempo
         '$year': (config, record) => dayjs(this.evaluate(config, record)).year() || 0,
         '$month': (config, record) => dayjs(this.evaluate(config, record)).month() + 1 || 0,
         '$day': (config, record) => dayjs(this.evaluate(config, record)).date() || 0,
@@ -252,22 +235,18 @@ export class ExpressionEngine {
         '$second': (config, record) => dayjs(this.evaluate(config, record)).second() || 0,
         '$dayOfWeek': (config, record) => dayjs(this.evaluate(config, record)).day() + 1 || 0,
         '$week': (config, record) => dayjs(this.evaluate(config, record)).week() || 0,
-
         '$dateAdd': (config, record) => {
             const baseDate = this.evaluate(config.startDate ?? config[0], record);
             const amount = Number(this.evaluate(config.amount ?? config[1], record)) || 0;
             const unit = this.evaluate(config.unit ?? config[2], record) || 'day';
             return dayjs(baseDate).add(amount, unit).format('YYYY-MM-DD HH:mm:ss');
         },
-
         '$timeDiff': (config, record) => {
             const startRaw = this.evaluate(config.start, record);
             const endRaw = this.evaluate(config.end, record);
             const unit = this.evaluate(config.unit, record) || 'hour';
-
             if (!startRaw || !endRaw) return 0;
 
-            // Helper para parsear formato HH:mm sin fechas cruzadas
             const parseDate = (val: any) => {
                 if (typeof val === 'string' && val.includes(':') && !val.includes('-')) {
                     const [hh, mm] = val.split(':');
@@ -281,15 +260,12 @@ export class ExpressionEngine {
             if (!start.isValid() || !end.isValid()) return 0;
 
             let diff = end.diff(start, unit, true);
-            // Rescate de lógica nocturna integrada
             if (diff < 0 && unit === 'hour') diff += 24;
 
-            return Math.round(diff * 100) / 100; // Redondeo directo a 2 decimales
+            return Math.round(diff * 100) / 100;
         },
 
-        // =========================================================================
-        // 5. COLECCIONES Y ESTADÍSTICAS (De: operators.collection.util.ts)
-        // =========================================================================
+        // Colecciones y Estadísticas
         '$aggregate': (config, record) => {
             const values = this.evaluate(config.values ?? config[0], record);
             const type = this.evaluate(config.type ?? config[1], record) || 'sum';

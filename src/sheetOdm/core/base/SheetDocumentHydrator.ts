@@ -1,36 +1,45 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { SheetsRepository } from "@sheetOdm/repository/sheets.repository";
 import { ClassType } from "@sheetOdm/types/query.types";
-import { SheetDocument } from "@sheetOdm/wrapper/sheet.document1";
 import { ROW_INDEX_SYMBOL, SHEETS_COLUMN_DETAILS } from '@sheetOdm/constants/metadata.constants';
 import { randomUUID } from "crypto"; // 🔥 Generador nativo de Node.js
+import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument";
 
-export interface HydratorOptions {
+export interface HydratorOptions<T extends object, U extends SheetDocument<T>> {
     new?: boolean;
     oldDataFlat?: any;
-    // 🔥 SOLUCIÓN AL ERROR DE TIPADO: Registramos el constructor dinámico del Modelo
-    customConstructor?: ClassType<any>;
+    // Ajusta esta firma para que coincida exactamente con tu constructor de SheetDocument
+    customConstructor?: new (
+        data: T,
+        repo: SheetsRepository<T>,
+        isNew: boolean,
+        entityClass?: ClassType<T>,
+        rowNumber?: number,
+        version?: number
+    ) => U;
 }
 
 export interface ISheetDocumentHydrator {
-    hydrateAndShield<T extends object>(
+    // Definimos U como un genérico opcional que por defecto es SheetDocument<T>
+    hydrateAndShield<T extends object, U extends SheetDocument<T> = SheetDocument<T>>(
         entityClass: ClassType<T>,
         repository: SheetsRepository<T>,
         rawData: any,
-        options?: HydratorOptions
-    ): SheetDocument<T> | null;
+        // Ahora pasamos los tipos correspondientes
+        options?: HydratorOptions<T, U>
+    ): U | null; // El retorno cambia de SheetDocument<T> a U para preservar el tipo exacto
 }
 
 @Injectable()
 export class SheetDocumentHydrator implements ISheetDocumentHydrator {
     private readonly logger = new Logger(SheetDocumentHydrator.name);
 
-    public hydrateAndShield<T extends object>(
+    public hydrateAndShield<T extends object, U extends SheetDocument<T> = SheetDocument<T>>(
         entityClass: ClassType<T>,
         repository: SheetsRepository<T>,
         rawData: any,
-        options: HydratorOptions = {}
-    ): SheetDocument<T> | null {
+        options: HydratorOptions<T, U> = {} // Ahora acepta los tipos
+    ): U {
         if (!rawData) return null;
 
         try {
@@ -130,7 +139,7 @@ export class SheetDocumentHydrator implements ISheetDocumentHydrator {
                 configurable: true
             });
 
-            return hydratedDoc;
+            return hydratedDoc as U;
 
         } catch (error: any) {
             // Log enriquecido para facilitar la depuración en producción

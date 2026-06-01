@@ -4,7 +4,6 @@ import {
     SHEETS_RELATIONS_LIST
 } from '@sheetOdm/constants/metadata.constants';
 
-export const GLOBAL_RELATION_REGISTRY = new Map<string, any[]>();
 
 export interface RelationOptions {
     targetEntity: () => new () => any;
@@ -35,13 +34,11 @@ export function SubCollection(
     return (target: object, propertyKey: string | symbol) => {
         const propertyName = propertyKey.toString();
 
-        // 1. Aseguramos que targetEntity SIEMPRE sea una función diferida (() => Clase)
         const targetEntityFn = typeof arg === 'function' && !arg.prototype
             ? (arg as () => EntityClass)
             : () => arg as EntityClass;
 
-        // 2. Guardamos la configuración. La inferencia la hará la capa de relaciones.
-        const relationConfig: any = {
+        const relationConfig = {
             targetEntity: targetEntityFn,
             options,
             isMany: true,
@@ -50,7 +47,12 @@ export function SubCollection(
 
         Reflect.defineMetadata(SHEETS_ALL_RELATIONS, relationConfig, target, propertyName);
 
-        const relationsList: string[] = Reflect.getMetadata(SHEETS_RELATIONS_LIST, target) || [];
+        // 🔥 CORRECCIÓN: Clonación segura con getOwnMetadata para evitar fugas entre entidades heredadas
+        let relationsList = Reflect.getOwnMetadata(SHEETS_RELATIONS_LIST, target);
+        if (!relationsList) {
+            const parentList = Reflect.getMetadata(SHEETS_RELATIONS_LIST, target) || [];
+            relationsList = [...parentList];
+        }
         if (!relationsList.includes(propertyName)) {
             relationsList.push(propertyName);
             Reflect.defineMetadata(SHEETS_RELATIONS_LIST, relationsList, target);

@@ -387,8 +387,9 @@ export class RelationEngine {
     /**
      * Retorna el mapa completo de relaciones configuradas para esta entidad.
      */
-    getRelationMetadata(): Record<string, RelationOptions> {
-        const target = this.entityClass.prototype;
+    public getRelationMetadata<T extends object>(entityClass: ClassType<T>): Record<string, RelationOptions> {
+        const target = entityClass.prototype;
+        // Utilizamos Reflect directamente sobre el prototype de la clase pasada por parámetro
         const relationsList: string[] = Reflect.getMetadata(SHEETS_RELATIONS_LIST, target) || [];
         const metadataMap: Record<string, RelationOptions> = {};
 

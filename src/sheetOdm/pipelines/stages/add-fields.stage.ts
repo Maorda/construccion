@@ -1,6 +1,6 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Logger } from "@nestjs/common";
 import { ExpressionEngine } from "@sheetOdm/engines/expression.engine";
-import { IQueryStage } from "@sheetOdm/engines/query/IPipelineStage";
+import { IQueryStage } from "./IqueryStages";
 
 export class AddFieldsStage implements IQueryStage {
     private readonly logger = new Logger(AddFieldsStage.name);
@@ -34,6 +34,12 @@ export class AddFieldsStage implements IQueryStage {
             // En una arquitectura robusta, si falla un campo adicional, devolvemos 
             // la data original para no tumbar toda la consulta por un cálculo menor.
             return data;
+        }
+    }
+    validate(config: any): void {
+        if (!config || typeof config !== 'object' || Object.keys(config).length === 0) {
+            // CORREGIDO: mensaje consistente con el stage
+            throw new Error("$addFields requiere un objeto de configuración con al menos un campo");
         }
     }
 }

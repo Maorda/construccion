@@ -1,11 +1,13 @@
-import { Injectable, OnModuleInit, Logger, OnApplicationBootstrap } from '@nestjs/common';
+// src/config/database-config.service.ts
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
-
-import { NamingStrategy } from '@sheetOdm/strategy/naming.strategy';
-import { SHEETS_DTO, SHEETS_REPOSITORY_MARKER, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants';
+import { SHEETS_DTO, SHEETS_REPOSITORY_MARKER } from '@sheetOdm/constants/metadata.constants';
 import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
-import { MetadataRegistry } from './metadata-registry.service';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
 import { ClassType } from '@sheetOdm/types/query.types';
+import * as crypto from 'crypto';
+
+const SYSTEM_SHEET_NAME = '_ODM_SYSTEM_METADATA_';
 
 @Injectable()
 export class DatabaseConfigService implements OnApplicationBootstrap {
@@ -18,129 +20,156 @@ export class DatabaseConfigService implements OnApplicationBootstrap {
     ) { }
 
     async onApplicationBootstrap() {
-        this.logger.log('🚀 Iniciando sincronización de infraestructura del ODM con Google Sheets...');
+        this.logger.log('🚀 Iniciando sincronización inteligente de infraestructura ODM...');
         await this.syncDatabaseSchema();
     }
 
     private async syncDatabaseSchema() {
-        // 1. Descubrir todos los providers instanciados en el ecosistema NestJS
         const providers = this.discoveryService.getProviders();
-
-        // 2. Filtrar los que tengan la marca de agua de nuestros Repositorios
         const sheetRepositories = providers.filter(wrapper =>
             wrapper.instance && wrapper.instance[SHEETS_REPOSITORY_MARKER] === true
         );
 
         if (sheetRepositories.length === 0) {
-            this.logger.warn('⚠️ No se encontraron repositorios de Sheets activos en la aplicación.');
+            this.logger.warn('⚠️ No se encontraron repositorios de Sheets activos.');
             return;
         }
 
         try {
-            // 3. Traer de un solo golpe todas las pestañas reales que existen en el Excel
-            const existingSheets = await this.gateway.getExistingSheetTitles();
-            const normalizedExistingSheets = existingSheets.map(s => s.toUpperCase());
+            // 1. Cargar las pestañas físicas actuales
+            let existingSheets = await this.gateway.getExistingSheetTitles();
+            let normalizedExistingSheets = existingSheets.map(s => s.toUpperCase());
 
+            // 2. Cargar o Inicializar la pestaña de Metadatos del Sistema
+            const metadataMap = new Map<string, { hash: string, rowIndex: number }>();
+
+            if (!normalizedExistingSheets.includes(SYSTEM_SHEET_NAME)) {
+                this.logger.log(`⚙️ Inicializando hoja de sistema: ${SYSTEM_SHEET_NAME}`);
+                await this.gateway.createSheet(SYSTEM_SHEET_NAME);
+                await this.gateway.writeHeaders(SYSTEM_SHEET_NAME, ['ENTITY_NAME', 'SCHEMA_HASH']);
+                normalizedExistingSheets.push(SYSTEM_SHEET_NAME);
+            } else {
+                // Si ya existe, leemos los hashes de la nube de un solo golpe
+                const rows = await this.gateway.getRange(`${SYSTEM_SHEET_NAME}!A2:B`);
+                rows.forEach((row, index) => {
+                    if (row[0] && row[1]) {
+                        metadataMap.set(row[0].toUpperCase(), { hash: String(row[1]), rowIndex: index + 2 });
+                    }
+                });
+            }
+
+            let nextAvailableRow = metadataMap.size + 2; // +1 cabecera, +1 para la siguiente fila libre
+
+            // 3. Iterar los repositorios y sincronizar solo si hay cambios
             for (const wrapper of sheetRepositories) {
                 const repository = wrapper.instance;
-                const entityClass = (repository as any).entityClass as ClassType;
+                const entityClass = (repository as any).entityClass as ClassType<any>;
 
-                if (!entityClass) {
-                    this.logger.warn(`⚠️ Repositorio [${wrapper.name}] ignorado: Falta la referencia 'entityClass'.`);
+                if (!entityClass) continue;
+
+                const sheetName = repository.sheetName.toUpperCase();
+                const entityName = entityClass.name.toUpperCase();
+
+                // ⚡ Cálculo de la Huella Digital (Hash)
+                const currentHash = this.generateSchemaHash(entityClass);
+                const savedData = metadataMap.get(entityName);
+
+                // ⚡ VALIDACIÓN INTELIGENTE (Salto si no hay cambios)
+                const isSheetMissing = !normalizedExistingSheets.includes(sheetName);
+                if (savedData && savedData.hash === currentHash && !isSheetMissing) {
+                    this.logger.debug(`🔹 [${entityName}] sin cambios estructurales. Omitiendo sync (Ahorro de API).`);
                     continue;
                 }
 
-                // 🎯 El repositorio ya calcula su propio sheetName limpiamente mediante Getters
-                const sheetName = repository.sheetName;
-                this.logger.log(`📡 Inspeccionando entidad: [${entityClass.name}] asignada a la pestaña "${sheetName}"`);
-
-                // 4. Validar consistencia del DTO obligatorio
+                // --- INICIO DE SINCRONIZACIÓN FÍSICA ---
                 const dto = Reflect.getMetadata(SHEETS_DTO, entityClass);
-                if (!dto) {
-                    throw new Error(`La entidad ${entityClass.name} no tiene un DTO vinculado en @Table({ dto: ... })`);
-                }
+                if (!dto) throw new Error(`La entidad ${entityClass.name} requiere un DTO en @Table({ dto: ... })`);
+
                 this.validateSchemaConsistency(entityClass, dto);
-
-                // 5. Obtener las cabeceras teóricas declaradas por los decoradores @Column
                 const definedHeaders = this.getHeadersForEntity(entityClass);
-                const sheetExists = normalizedExistingSheets.includes(sheetName.toUpperCase());
 
-                if (!sheetExists) {
-                    // --- CASO A: LA PESTAÑA NO EXISTE EN DRIVE ---
+                if (isSheetMissing) {
                     this.logger.log(`➕ Creando pestaña nueva: "${sheetName}"...`);
                     await this.gateway.createSheet(sheetName);
-
-                    // Escribir las cabeceras iniciales
                     await this.gateway.writeHeaders(sheetName, definedHeaders);
-                    this.logger.log(`✅ Pestaña "${sheetName}" creada con éxito con cabeceras: [${definedHeaders.join(', ')}]`);
                 } else {
-                    // --- CASO B: LA PESTAÑA EXISTE -> EVALUAR AUTO-MIGRACIÓN ---
-                    const actualRows = await this.gateway.getRange(`${sheetName}!A1:Z1`);
-                    const currentHeaders = actualRows[0]
-                        ? actualRows[0].map((h: any) => String(h).trim().toUpperCase())
-                        : [];
+                    await this.autoMigrate(sheetName, definedHeaders);
+                }
 
-                    // Buscar si el desarrollador agregó propiedades nuevas al código de la Entidad
-                    const missingHeaders = definedHeaders.filter(h => !currentHeaders.includes(h.toUpperCase()));
-
-                    if (missingHeaders.length > 0) {
-                        this.logger.log(`🔄 Auto-migración detectada en "${sheetName}": Añadiendo columnas faltantes [${missingHeaders.join(', ')}]`);
-                        const finalHeaders = [...currentHeaders, ...missingHeaders];
-
-                        // Reescribimos la fila de cabeceras expandiéndola de forma segura
-                        await this.gateway.writeHeaders(sheetName, finalHeaders);
-                        this.logger.log(`✅ Estructura de "${sheetName}" actualizada y sincronizada.`);
-                    } else {
-                        this.logger.log(`🔹 Estructura de "${sheetName}" al día. No requiere cambios.`);
-                    }
+                // --- ACTUALIZAR HASH EN LA NUBE ---
+                if (savedData) {
+                    // Actualiza fila existente
+                    await this.gateway.updateRow(SYSTEM_SHEET_NAME, savedData.rowIndex, [entityName, currentHash]);
+                } else {
+                    // Inserta fila nueva en el registro de metadatos
+                    await this.gateway.updateRow(SYSTEM_SHEET_NAME, nextAvailableRow, [entityName, currentHash]);
+                    nextAvailableRow++;
                 }
             }
 
-            this.logger.log('✨ Sincronización completa. Todos los repositorios se encuentran operativos.');
+            this.logger.log('✨ Sincronización inteligente completada.');
 
         } catch (error: any) {
             this.logger.error(`❌ Error crítico de infraestructura ODM: ${error.message}`);
-            // Si la base de datos documental (Sheets) está corrupta o inaccesible, abortamos el arranque del API.
             process.exit(1);
         }
     }
 
     /**
-     * Valida que el DTO y los Decoradores de la Entidad coincidan perfectamente en propiedades y tipos
+     * Genera un identificador determinista (Hash MD5) basado en la estructura de la Entidad.
+     * Si cambias un nombre de columna, su tipo o su obligatoriedad, el hash cambiará.
      */
-    private validateSchemaConsistency(entity: ClassType, dto: ClassType) {
+    private generateSchemaHash(entityClass: ClassType<any>): string {
+        const columnList = this.registry.getColumnList(entityClass);
+        const colDetails = this.registry.getColumnDetails(entityClass);
+
+        // Ordenamos las columnas para que el hash sea el mismo aunque las desordenes en el código
+        const sortedColumns = [...columnList].sort();
+
+        const schemaDefinition = sortedColumns.map(col => {
+            const config = colDetails[col];
+            // Normalizamos el tipo a un string para la firma
+            const typeStr = typeof config.type === 'function' ? config.type.name : String(config.type);
+            const required = config.required ? 'req' : 'opt';
+            return `${col}:${typeStr}:${required}`;
+        }).join('|');
+
+        return crypto.createHash('md5').update(schemaDefinition).digest('hex');
+    }
+
+    private async autoMigrate(sheetName: string, definedHeaders: string[]) {
+        const actualRows = await this.gateway.getRange(`${sheetName}!A1:Z1`);
+        const currentHeaders = actualRows[0]
+            ? (actualRows[0] as string[]).map(h => String(h).trim().toUpperCase())
+            : [];
+
+        const missingHeaders = definedHeaders.filter(h => !currentHeaders.includes(h.toUpperCase()));
+
+        if (missingHeaders.length > 0) {
+            this.logger.log(`🔄 Migrando "${sheetName}": Añadiendo [${missingHeaders.join(', ')}]`);
+            await this.gateway.writeHeaders(sheetName, [...currentHeaders, ...missingHeaders]);
+        }
+    }
+
+    private validateSchemaConsistency(entity: ClassType<any>, dto: ClassType<any>) {
         const colDetails = this.registry.getColumnDetails(entity);
-        const dtoInstance = new (dto as any)();
-        const dtoFields = Object.getOwnPropertyNames(dtoInstance);
         const entityFields = Object.keys(colDetails);
+        const dtoFields = Object.getOwnPropertyNames(dto.prototype).filter(p => p !== 'constructor');
 
         for (const field of entityFields) {
             if (!dtoFields.includes(field)) {
-                throw new Error(`[ODM Error] La entidad '${entity.name}' define '${field}', pero no existe en su DTO '${dto.name}'.`);
-            }
-            const dtoFieldType = Reflect.getMetadata('design:type', dto.prototype, field);
-            const entityColumnType = colDetails[field].type;
-
-            if (entityColumnType && dtoFieldType) {
-                const dtoTypeName = dtoFieldType.name.toLowerCase();
-                if (entityColumnType !== dtoTypeName) {
-                    throw new Error(`[ODM Error] Inconsistencia de tipo en '${field}'. DTO espera '${dtoTypeName}', Entidad define '${entityColumnType}'.`);
-                }
+                this.logger.warn(`⚠️ Aviso: Campo '${field}' en Entidad no detectado en el DTO.`);
             }
         }
     }
 
-    /**
-     * Transforma los metadatos de las columnas en un array ordenado de cabeceras físicas para Google Sheets
-     */
-    private getHeadersForEntity(entity: ClassType): string[] {
+    private getHeadersForEntity(entity: ClassType<any>): string[] {
+        const columnList = this.registry.getColumnList(entity);
         const colDetails = this.registry.getColumnDetails(entity);
-        const colMap = this.registry.getColumnMap(entity);
-        return Object.entries(colMap)
-            .sort(([, a], [, b]) => a - b)
-            .map(([propName]) => {
-                const colConfig = colDetails[propName];
-                return (colConfig?.name ? colConfig.name : propName).toUpperCase();
-            });
+
+        return columnList.map(propName => {
+            const colConfig = colDetails[propName];
+            return (colConfig?.name || propName).toUpperCase();
+        });
     }
 }

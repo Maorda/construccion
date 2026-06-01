@@ -9,18 +9,22 @@ import {
     SHEETS_COLUMN_LIST,
     SHEETS_DELETE_CONTROL,
     SHEETS_RELATIONS_LIST,
-    SHEETS_TABLE_NAME
+    SHEETS_TABLE_NAME,
+    SHEETS_VERSION_FIELD,
+    SHEETS_VIRTUALS
 } from '@sheetOdm/constants/metadata.constants';
 import { ClassType } from '@sheetOdm/types/query.types';
 
-interface EntitySchema {
+export interface EntitySchema {
     sheetName: string;
     primaryKey: string;
     primaryKeyColumnName: string;
     columns: Record<string, ColumnOptions>;
     columnList: string[];
     deleteControl: string | null;
+    versionField: string | null;
     relations: string[];
+    virtuals: any[];
 }
 
 @Injectable()
@@ -28,58 +32,43 @@ export class MetadataRegistry {
     private readonly schemaCache = new Map<Function, EntitySchema>();
     private static readonly registeredEntitiesStore = new Set<ClassType<any>>();
 
-    /**
-     * Centralizador: Construye el esquema completo solo la primera vez.
-     */
-    private ensureMetadata(entityClass: ClassType<any>): EntitySchema {
-        if (!this.schemaCache.has(entityClass)) {
-            const proto = entityClass.prototype;
-
-            // Aquí "compilas" la metadata una única vez
-            const schema: EntitySchema = {
-                sheetName: Reflect.getMetadata(SHEETS_TABLE_NAME, entityClass) || entityClass.name.toUpperCase(),
-                primaryKey: Reflect.getMetadata(SHEETS_PRIMARY_KEY, entityClass) || 'id',
-                primaryKeyColumnName: getPrimaryKeyColumnName(entityClass) || 'ID',
-                columns: Reflect.getMetadata(SHEETS_COLUMN_DETAILS, entityClass) || {},
-                columnList: Reflect.getMetadata(SHEETS_COLUMN_LIST, entityClass) || [],
-                deleteControl: Reflect.getMetadata(SHEETS_DELETE_CONTROL, entityClass) || null,
-                relations: Reflect.getMetadata(SHEETS_RELATIONS_LIST, proto) || []
-            };
-
-            this.schemaCache.set(entityClass, schema);
-        }
-        return this.schemaCache.get(entityClass)!;
-    }
-
     // --- MÉTODOS PÚBLICOS (Ahora son lecturas instantáneas de memoria) ---
 
     getPrimaryKeyField<T extends object>(entityClass: ClassType<T>): string {
-        return this.ensureMetadata(entityClass).primaryKey;
+        const cached = this.schemaCache.get(entityClass);
+        if (cached) return cached.primaryKey;
+
+        return this.compileSchema(entityClass).primaryKey;
     }
+
+
 
     getPrimaryKeySheetName<T extends object>(entityClass: ClassType<T>): string {
-        return this.ensureMetadata(entityClass).primaryKeyColumnName;
+        return this.compileSchema(entityClass).primaryKeyColumnName;
     }
 
-    getColumnDetails<T extends object>(entityClass: ClassType<T>): Record<string, ColumnOptions> {
-        return this.ensureMetadata(entityClass).columns;
+    getColumnDetails(entityClass: ClassType<any>): Record<string, ColumnOptions> {
+        return this.compileSchema(entityClass).columns;
     }
 
-    getColumnMap<T extends object>(entityClass: ClassType<T>): Record<string, number> {
-        const schema = this.ensureMetadata(entityClass);
+    getColumnMap(entityClass: ClassType<any>): Record<string, number> {
+        const schema = this.getSchema(entityClass);
         const map: Record<string, number> = {};
-        schema.columnList.forEach((colName, index) => {
-            map[colName] = index;
-        });
+        schema.columnList.forEach((colName, index) => { map[colName] = index; });
         return map;
     }
 
     getDeleteControlProperty<T extends object>(entityClass: ClassType<T>): string | null {
-        return this.ensureMetadata(entityClass).deleteControl;
+        const cached = this.schemaCache.get(entityClass);
+        if (cached) return cached.deleteControl;
+
+        return this.compileSchema(entityClass).deleteControl;
     }
 
+
+
     getRelationsList<T extends object>(entityClass: ClassType<T>): string[] {
-        return this.ensureMetadata(entityClass).relations;
+        return this.compileSchema(entityClass).relations;
     }
 
     // --- Métodos que requieren lógica dinámica (No se pueden cachear estáticamente) ---
@@ -109,7 +98,7 @@ export class MetadataRegistry {
         return undefined;
     }
 
-    getRelationOptions<T extends object>(entityClass: ClassType<T>, relationName: string): any {
+    getRelationOptions(entityClass: ClassType<any>, relationName: string): any {
         return Reflect.getMetadata(SHEETS_ALL_RELATIONS, entityClass.prototype, relationName) ||
             Reflect.getMetadata(SHEETS_ALL_RELATIONS, entityClass, relationName);
     }
@@ -122,5 +111,43 @@ export class MetadataRegistry {
     static getAllRegisteredEntities(): ClassType<any>[] {
         return Array.from(this.registeredEntitiesStore);
     }
+    getVersionField<T extends object>(entityClass: ClassType<T>): string | null {
+        // Busca en los metadatos globales de la clase el campo marcado con @Version()
+        return Reflect.getMetadata(SHEETS_VERSION_FIELD, entityClass) || null;
+    }
+    getColumnList<T extends object>(entityClass: ClassType<T>): string[] {
+        return this.compileSchema(entityClass).columnList;
+    }
+
+    public getSchema(entityClass: ClassType): EntitySchema {
+        if (this.schemaCache.has(entityClass)) {
+            return this.schemaCache.get(entityClass)!;
+        }
+
+        // 🏗️ Compilación del esquema (Se ejecuta UNA sola vez por entidad)
+        const schema = this.compileSchema(entityClass);
+        this.schemaCache.set(entityClass, schema);
+
+        return schema;
+    }
+
+
+    private compileSchema(entityClass: ClassType<any>): EntitySchema {
+        const proto = entityClass.prototype;
+
+        return {
+            sheetName: (Reflect.getMetadata(SHEETS_TABLE_NAME, entityClass) || entityClass.name).toUpperCase(),
+            primaryKey: Reflect.getMetadata(SHEETS_PRIMARY_KEY, entityClass) || 'id',
+            primaryKeyColumnName: getPrimaryKeyColumnName(entityClass) || 'ID',
+            columns: Reflect.getMetadata(SHEETS_COLUMN_DETAILS, entityClass) || {},
+            columnList: Reflect.getMetadata(SHEETS_COLUMN_LIST, entityClass) || [],
+            deleteControl: Reflect.getMetadata(SHEETS_DELETE_CONTROL, entityClass) || null,
+            versionField: Reflect.getMetadata(SHEETS_VERSION_FIELD, entityClass) || null,
+            relations: Reflect.getMetadata(SHEETS_RELATIONS_LIST, proto) || [],
+            virtuals: Reflect.getMetadata(SHEETS_VIRTUALS, entityClass) || []
+        };
+    }
+
+
 
 }

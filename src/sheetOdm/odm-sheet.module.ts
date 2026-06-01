@@ -12,10 +12,10 @@ import { NamingStrategy } from '@sheetOdm/strategy/naming.strategy';
 import { SheetsRepositoryFactory } from '@sheetOdm/repository/sheets-repository.factory';
 
 // Motores de Consulta
-import { CompareEngine } from '@sheetOdm/engines/compare.engine';
+import { CompareEngine } from '@sheetOdm/engines/dependientesnivel1/compare.engine';
 import { ExpressionEngine } from '@sheetOdm/engines/expression.engine';
 import { ProjectionService } from '@sheetOdm/engines/projection.service';
-import { AggregationEngine } from '@sheetOdm/engines/aggregation.engine';
+import { AggregationEngine } from '@sheetOdm/engines/dependientesnivel1/aggregation.engine';
 import { QueryEngine } from '@sheetOdm/pipelines/query.engine';
 
 // Tipos, Creador de Modelos y Opciones
@@ -37,6 +37,7 @@ import { SkipStage } from './pipelines/stages/skip.stage';
 import { UnwindStage } from './pipelines/stages/unwind.stage';
 import { LookupStage } from './pipelines/stages/lookup.stage';
 import { SheetsRepositoryBuilder } from './repository/SheetsRepositoryBuilder';
+import { UnitOfWork } from './services/UnitOfWork';
 
 const CORE_PROVIDERS: Provider[] = [
 
@@ -67,6 +68,7 @@ const CORE_PROVIDERS: Provider[] = [
     DataMapper,
     SheetDocumentHydrator,
     ProjectionService,
+    UnitOfWork
 
 ];
 
@@ -142,36 +144,41 @@ export class OdmSheetModule {
                 // 1. EL REPOSITORIO: Delegamos el instanciamiento a la fábrica
                 {
                     provide: REPO_TOKEN,
-                    useFactory: <T extends Object>(
-                        entityClass: ClassType,
+                    useFactory: (
+                        // El orden de estos parámetros DEBE ser idéntico al arreglo inject[]
                         metadataRegistry: MetadataRegistry,
-                        queryEngine: QueryEngine<T>,
+                        queryEngine: QueryEngine,
                         gateway: SheetDataGateway,
                         relationManager: RelationManager,
                         dataMapper: DataMapper,
                         moduleRef: ModuleRef,
-                        hydrator: SheetDocumentHydrator,) => {
-                        // Llamas a tu builder limpio
+                        hydrator: SheetDocumentHydrator,
+                        unitOfWork: UnitOfWork
+                    ) => {
+                        // 'Entity' viene directamente del map() superior, no se inyecta
                         return SheetsRepositoryBuilder.build(
-                            entityClass,
+                            Entity,
                             metadataRegistry,
                             queryEngine,
                             gateway,
                             relationManager,
                             dataMapper,
                             moduleRef,
-                            hydrator
+                            hydrator,
+                            unitOfWork
                         );
                     },
-                    inject: [GoogleAutenticarService,
+                    inject: [
                         MetadataRegistry,
                         QueryEngine,
-                        'DATABASE_OPTIONS', // Importante: usar el token string
                         SheetDataGateway,
                         RelationManager,
                         DataMapper,
-                        ModuleRef
+                        ModuleRef,
+                        SheetDocumentHydrator,
+                        UnitOfWork
                     ],
+
                 },
                 // 2. EL MODELO: Construido dinámicamente con el wrap Active Record
                 {

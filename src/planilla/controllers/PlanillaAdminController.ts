@@ -40,9 +40,9 @@ export class PlanillaAdminController {
         // console.log('DTO recibido:', dto);
         this.logger.log(`Recibiendo petición para guardar detalle: ${JSON.stringify(dto)}`);
         try {
-            const result = await this.planillaService.save(dto);
-            console.log('✅ Resultado del guardado en Sheets:', result); // <--- AGREGAR
-            return result;
+            // const result = await this.planillaService.save(dto);
+            // console.log('✅ Resultado del guardado en Sheets:', result); // <--- AGREGAR
+            return "result";
         } catch (error) {
             this.logger.error(`Error al guardar: ${error.message}`);
             throw error;
@@ -54,7 +54,7 @@ export class PlanillaAdminController {
         @Body() projection?: any // El usuario envía qué campos quiere ver
     ) {
         // Llamamos al servicio que configuramos anteriormente
-        return await this.planillaService.findOne(id, projection);
+        return await "this.planillaService.findOne(id, projection)";
     }
 
 }

@@ -21,16 +21,16 @@ export * from './services/metadata-registry.service';
 export * from './repository/sheets.repository';
 export * from './repository/sheets-repository.factory';
 export * from './repository/create-model';
-export * from './wrapper/sheet.document1';
+
 
 // 6. Estrategia de Nombres
 export * from './strategy/naming.strategy';
 
 // 7. Motores de Consulta
-export * from './engines/compare.engine';
+export * from './engines/dependientesnivel1/compare.engine';
 export * from './engines/expression.engine';
 export * from './engines/projection.service';
-export * from './engines/aggregation.engine';
+export * from './engines/dependientesnivel1/aggregation.engine';
 export * from './pipelines/query.engine';
 
 // 8. Módulo Principal

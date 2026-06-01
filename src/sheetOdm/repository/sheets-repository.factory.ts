@@ -14,7 +14,7 @@ export class SheetsRepositoryFactory<T extends object> {
     constructor(
 
         private readonly metadataRegistry: MetadataRegistry,
-        private readonly queryEngine: QueryEngine<T>,
+        private readonly queryEngine: QueryEngine,
         private readonly gateway: SheetDataGateway,
         private readonly relationManager: RelationManager,
         private readonly dataMapper: DataMapper,
