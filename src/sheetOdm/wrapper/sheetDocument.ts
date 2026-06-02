@@ -1,4 +1,5 @@
 import { ROW_INDEX_SYMBOL, SHEETS_VIRTUALS } from "@sheetOdm/constants/metadata.constants";
+import { SheetsRepository } from "@sheetOdm/repository/sheets.repository";
 import { ClassType } from "@sheetOdm/types/query.types";
 
 export abstract class SheetDocument<T extends object> {
@@ -12,6 +13,7 @@ export abstract class SheetDocument<T extends object> {
 
     constructor(
         data: Partial<T> = {},
+        protected readonly repo: SheetsRepository<T>,
         isNew = true,
         entityClass?: ClassType<T>,
         rowNumber?: number,

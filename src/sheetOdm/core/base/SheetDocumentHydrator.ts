@@ -4,6 +4,7 @@ import { ClassType } from "@sheetOdm/types/query.types";
 import { ROW_INDEX_SYMBOL, SHEETS_COLUMN_DETAILS } from '@sheetOdm/constants/metadata.constants';
 import { randomUUID } from "crypto"; // 🔥 Generador nativo de Node.js
 import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument";
+import { MetadataRegistry } from "@sheetOdm/services/metadata-registry.service";
 
 export interface HydratorOptions<T extends object, U extends SheetDocument<T>> {
     new?: boolean;
@@ -31,8 +32,11 @@ export interface ISheetDocumentHydrator {
 }
 
 @Injectable()
-export class SheetDocumentHydrator implements ISheetDocumentHydrator {
+export class SheetDocumentHydrator {
     private readonly logger = new Logger(SheetDocumentHydrator.name);
+    constructor(
+        private readonly metadataRegistry: MetadataRegistry,
+    ) { }
 
     public hydrateAndShield<T extends object, U extends SheetDocument<T> = SheetDocument<T>>(
         entityClass: ClassType<T>,
@@ -79,9 +83,26 @@ export class SheetDocumentHydrator implements ISheetDocumentHydrator {
             // 6. 🔄 INSTANCIACIÓN VIRTUAL PROTOTÍPICA (Estilo Mongoose)
             // Si viene un constructor personalizado (el Modelo dinámico), lo instanciamos directamente.
             // De lo contrario, cae en el wrapper estándar SheetDocument.
-            const TargetConstructor = options.customConstructor || SheetDocument;
-            const hydratedDoc = new TargetConstructor(instance as T, repository, isNewDoc) as SheetDocument<T>;
-
+            const DynamicModel = options.customConstructor || class extends SheetDocument<T> {
+                async save(): Promise<this> {
+                    // Delegamos al repositorio que ya tenemos en scope gracias al cierre (closure)
+                    const saved = await repository.save(this);
+                    return saved as this;
+                }
+                async remove(): Promise<boolean> {
+                    return await repository.delete(this);
+                }
+                async populate(path: string): Promise<this> {
+                    // Implementación de carga de relaciones si fuera necesaria
+                    return this;
+                }
+            };
+            const hydratedDoc = new DynamicModel(
+                instance as T,
+                repository,
+                isNewDoc,
+                entityClass
+            ) as U;
             (hydratedDoc as any)._entityClass = entityClass;
 
             // Aseguramos que el documento vivo también mantenga el símbolo operacional de la fila
