@@ -1,6 +1,6 @@
 import { ModuleRef } from "@nestjs/core";
 import { SheetDataGateway } from "@sheetOdm/gateway/sheetDataGateway";
-import { QueryEngine } from "@sheetOdm/pipelines/query.engine";
+
 import { DataMapper } from "@sheetOdm/services/data-mapper.service";
 import { MetadataRegistry } from "@sheetOdm/services/metadata-registry.service";
 import { RelationManager } from "@sheetOdm/services/relation-manager.service";
@@ -8,6 +8,7 @@ import { ClassType } from "@sheetOdm/types/query.types";
 import { SheetsRepository } from "./sheets.repository";
 import { SheetDocumentHydrator } from "@sheetOdm/core/base/SheetDocumentHydrator";
 import { UnitOfWork } from "@sheetOdm/services/UnitOfWork";
+import { QueryEngine } from "@sheetOdm/engines/query.engine";
 
 export class SheetsRepositoryBuilder {
     // Método estático puro. Entran dependencias, sale un Repositorio. Cero estado global.

@@ -147,7 +147,18 @@ export class MetadataRegistry {
             virtuals: Reflect.getMetadata(SHEETS_VIRTUALS, entityClass) || []
         };
     }
+    getEntityBySheetName(sheetName: string): ClassType<any> | undefined {
+        const targetSheetName = sheetName.toUpperCase();
 
+        // Iteramos sobre las entidades registradas estáticamente
+        for (const entity of MetadataRegistry.getAllRegisteredEntities()) {
+            const schema = this.getSchema(entity);
+            if (schema.sheetName === targetSheetName) {
+                return entity;
+            }
+        }
+        return undefined;
+    }
 
 
 }

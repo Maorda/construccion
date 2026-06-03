@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { IQueryStage } from "./IqueryStages";
-import { GroupAccumulator, GroupConfig } from "../types";
+import { GroupAccumulator, GroupConfig, LookupConfig } from "../types";
+import { StageUtils } from "./StageUtils";
+import { RelationEngine } from "@sheetOdm/engines/relationEngine";
 
 
 @Injectable()
@@ -9,7 +11,6 @@ export class GroupStage implements IQueryStage {
         const groups = new Map<string, any[]>();
 
         for (const item of data) {
-            // Robustez: Soporte para campos simples limpiando el operador $
             const targetField = config._id === null ? 'null' : config._id.replace('$', '');
             const key = String(config._id === null ? 'null' : (item[targetField] ?? 'null'));
 
@@ -29,48 +30,38 @@ export class GroupStage implements IQueryStage {
         }
         return result;
     }
+
     validate(config: any): void {
-        // 1. Verificación básica de objeto
-        if (!config || typeof config !== 'object') {
-            throw new Error("$group requiere un objeto de configuración");
-        }
+        StageUtils.validateObject(config, '$group');
 
-        // 2. _id es obligatorio
         if (!('_id' in config)) {
-            throw new Error("$group requiere definir un campo '_id'");
+            throw new Error("[$group] requiere definir un campo '_id'.");
         }
 
-        // 3. Definimos los operadores permitidos
         const validAccumulators = ['$sum', '$avg', '$min', '$max', '$count', '$push'];
 
-        // 4. Validar acumuladores
         for (const [key, accumulator] of Object.entries(config)) {
             if (key === '_id') continue;
 
-            // Cada acumulador debe ser un objeto: { $sum: "$campo" }
             if (typeof accumulator !== 'object' || accumulator === null) {
-                throw new Error(`$group: el acumulador '${key}' debe ser un objeto.`);
+                throw new Error(`[$group] El acumulador '${key}' debe ser un objeto.`);
             }
 
             const operator = Object.keys(accumulator as any)[0];
-
             if (!validAccumulators.includes(operator)) {
-                throw new Error(`$group: operador '${operator}' no soportado en el acumulador '${key}'.`);
+                throw new Error(`[$group] Operador '${operator}' no soportado en el acumulador '${key}'.`);
             }
 
-            // Opcional: Validar que el valor sea un string (el campo a procesar)
-            // excepto para $count que a veces se usa diferente
             const target = (accumulator as any)[operator];
             if (operator !== '$count' && typeof target !== 'string') {
-                throw new Error(`$group: el operador '${operator}' en '${key}' espera un campo string (ej: '$precio').`);
+                throw new Error(`[$group] El operador '${operator}' en '${key}' espera un campo string (ej: '$precio').`);
             }
         }
     }
+
     private applyAccumulator(acc: GroupAccumulator, items: any[]): any {
         const field = Object.keys(acc)[0];
         const targetPath = (acc as any)[field].replace('$', '');
-
-        // Helper seguro para resolver valores numéricos intermedios
         const getValues = () => items.map(i => Number(i[targetPath]) || 0);
 
         switch (field) {
@@ -81,6 +72,54 @@ export class GroupStage implements IQueryStage {
             case '$count': return items.length;
             case '$push': return items.map(i => i[targetPath]);
             default: return null;
+        }
+    }
+}
+
+@Injectable()
+export class LookupStage implements IQueryStage {
+    constructor(private readonly engine: RelationEngine) { }
+
+    async execute(data: any[], config: LookupConfig) {
+        return await this.engine.applyLookup(data, config as any);
+    }
+
+    validate(config: any): void {
+        StageUtils.validateObject(config, '$lookup');
+
+        const required = ['from', 'localField', 'foreignField', 'as'];
+        for (const field of required) {
+            if (!config[field]) {
+                throw new Error(`[$lookup] Mal configurado: falta la propiedad obligatoria '${field}'.`);
+            }
+        }
+
+        if (typeof config.from !== 'string') {
+            throw new Error("[$lookup] 'from' debe ser un string (nombre de la colección/hoja).");
+        }
+    }
+}
+
+@Injectable()
+export class UnwindStage implements IQueryStage {
+    async execute(data: any[], config: string | { path: string }) {
+        const path = typeof config === 'string' ? config : config.path;
+        const field = path.replace('$', '');
+
+        return data.flatMap(item => {
+            const arr = item[field];
+            if (!Array.isArray(arr) || arr.length === 0) return item;
+            return arr.map(subItem => ({ ...item, [field]: subItem }));
+        });
+    }
+
+    validate(config: any): void {
+        if (!config || (typeof config !== 'string' && typeof config !== 'object')) {
+            throw new Error("[$unwind] requiere un string o un objeto con la propiedad 'path'.");
+        }
+
+        if (typeof config === 'object' && !config.path) {
+            throw new Error("[$unwind] El objeto de configuración debe contener la propiedad 'path'.");
         }
     }
 }

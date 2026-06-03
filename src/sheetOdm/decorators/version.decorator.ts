@@ -1,8 +1,8 @@
-// @sheetOdm/decorators/version.decorator.ts
-import { SHEETS_VERSION_FIELD } from '@sheetOdm/constants/metadata.constants';
+import 'reflect-metadata';
+import { SHEETS_VERSION_FIELD } from "@sheetOdm/constants/metadata.constants";
 
-export function Version() {
-    return (target: any, propertyKey: string) => {
-        Reflect.defineMetadata(SHEETS_VERSION_FIELD, propertyKey, target.constructor);
+export function Version(): PropertyDecorator {
+    return (target: any, propertyKey: string | symbol) => {
+        Reflect.defineMetadata(SHEETS_VERSION_FIELD, propertyKey.toString(), target.constructor);
     };
 }

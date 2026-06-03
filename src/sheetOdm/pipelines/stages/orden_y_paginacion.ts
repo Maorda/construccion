@@ -1,7 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { CompareEngine } from "@sheetOdm/index";
 import { IQueryStage } from "./IqueryStages";
-
+import { StageUtils } from "./StageUtils";
 
 
 @Injectable()
@@ -9,7 +8,6 @@ export class SortStage implements IQueryStage {
     public async execute(data: any[], config: Record<string, 1 | -1>): Promise<any[]> {
         if (!config || Object.keys(config).length === 0) return data;
 
-        // Retornamos una copia mutada para no alterar el array en memoria del caché accidentalmente
         return [...data].sort((a, b) => {
             for (const key of Object.keys(config)) {
                 const direction = config[key];
@@ -18,18 +16,15 @@ export class SortStage implements IQueryStage {
 
                 if (valA === valB) continue;
 
-                // 🛡️ PROTECCIÓN SHEETS: Manejo seguro de celdas vacías (las empuja al final)
                 if (valA === undefined || valA === null || valA === '') return 1;
                 if (valB === undefined || valB === null || valB === '') return -1;
 
-                // 🗓️ Fechas: Comparación precisa basada en milisegundos
                 if (valA instanceof Date && valB instanceof Date) {
                     return direction === 1
                         ? valA.getTime() - valB.getTime()
                         : valB.getTime() - valA.getTime();
                 }
 
-                // 🔤 Numérico y Alfabético
                 if (valA > valB) return direction === 1 ? 1 : -1;
                 if (valA < valB) return direction === 1 ? -1 : 1;
             }
@@ -38,13 +33,40 @@ export class SortStage implements IQueryStage {
     }
 
     public validate(config: any): void {
-        if (typeof config !== 'object' || Array.isArray(config)) {
-            throw new Error('[SortStage] La configuración debe ser un objeto. Ejemplo: { edad: -1, nombre: 1 }');
-        }
+        StageUtils.validateObject(config, '$sort');
         for (const key of Object.keys(config)) {
             if (config[key] !== 1 && config[key] !== -1) {
-                throw new Error(`[SortStage] El valor para ordenar "${key}" debe ser estrictamente 1 (asc) o -1 (desc).`);
+                throw new Error(`[$sort] El valor para ordenar "${key}" debe ser estrictamente 1 (asc) o -1 (desc).`);
             }
+        }
+    }
+}
+@Injectable()
+export class LimitStage implements IQueryStage {
+    public async execute(data: any[], config: number): Promise<any[]> {
+        const limitAmount = Number(config);
+        if (isNaN(limitAmount) || limitAmount <= 0) return [];
+        return data.slice(0, limitAmount);
+    }
+
+    public validate(config: any): void {
+        if (typeof config !== 'number' || config <= 0) {
+            throw new Error('[$limit] El valor debe ser un número entero mayor a cero.');
+        }
+    }
+}
+
+@Injectable()
+export class SkipStage implements IQueryStage {
+    public async execute(data: any[], config: number): Promise<any[]> {
+        const skipAmount = Number(config);
+        if (isNaN(skipAmount) || skipAmount <= 0) return data;
+        return data.slice(skipAmount);
+    }
+
+    public validate(config: any): void {
+        if (typeof config !== 'number' || config < 0) {
+            throw new Error('[$skip] El valor debe ser un número entero positivo o cero.');
         }
     }
 }

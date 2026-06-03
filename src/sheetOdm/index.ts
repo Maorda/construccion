@@ -1,3 +1,5 @@
+//Cualquier cosa que no exportes en este archivo se considerará "privada"
+// y el desarrollador no podrá importarla, protegiendo así tus motores internos (QueryEngine, PipelineOrchestrator, etc.).
 // 1. Constantes
 export * from './constants/metadata.constants';
 
@@ -27,11 +29,9 @@ export * from './repository/create-model';
 export * from './strategy/naming.strategy';
 
 // 7. Motores de Consulta
-export * from './engines/dependientesnivel1/compare.engine';
-export * from './engines/expression.engine';
 export * from './engines/projection.service';
 export * from './engines/dependientesnivel1/aggregation.engine';
-export * from './pipelines/query.engine';
+
 
 // 8. Módulo Principal
 export * from './odm-sheet.module';

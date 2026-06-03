@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import { QueryEngine } from "./query.engine";
-import { GroupConfig, LookupConfig, PipelineStage } from "./types";
+
+import { GroupConfig, LookupConfig } from "./types";
+import { QueryEngine } from "@sheetOdm/engines/query.engine";
+import { PipelineStage } from "@sheetOdm/types/query.types";
 
 
 @Injectable()
@@ -63,6 +65,6 @@ export class QueryBuilder {
     }
 
     async execute(data: any[]): Promise<any[]> {
-        return await this.engine.aggregate(data, this.pipeline);
+        return await this.engine.aggregate(data, this.pipeline as any); // "as any" como último recurso
     }
 }

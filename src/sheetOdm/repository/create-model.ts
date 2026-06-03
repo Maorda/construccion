@@ -41,7 +41,7 @@ export function createModel<T extends object>(
             const isNew = rowNumber === undefined;
 
             // Invocamos a SheetDocument SIN el repo
-            super(dataObj, isNew, entityClass, rowNumber, version);
+            super(dataObj, repo, isNew, entityClass, rowNumber, version);
 
             try {
                 (this as any)._snapshot = isNew ? {} : deepClone(dataObj);

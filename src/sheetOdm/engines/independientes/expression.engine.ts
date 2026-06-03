@@ -17,202 +17,97 @@ export class ExpressionEngine {
     /**
      * 🟢 REGISTRO CENTRAL DE OPERADORES
      */
-    private readonly operatorsRegistry: Record<string, (config: any, record: any) => any> = {
-
-        // =========================================================================
-        // 1. OPERADORES LÓGICOS Y DE COMPARACIÓN
-        // =========================================================================
-        '$eq': (config, record) => this.evaluate(config[0], record) === this.evaluate(config[1], record),
-        '$ne': (config, record) => this.evaluate(config[0], record) !== this.evaluate(config[1], record),
-        '$gt': (config, record) => Number(this.evaluate(config[0], record)) > Number(this.evaluate(config[1], record)),
-        '$gte': (config, record) => Number(this.evaluate(config[0], record)) >= Number(this.evaluate(config[1], record)),
-        '$lt': (config, record) => Number(this.evaluate(config[0], record)) < Number(this.evaluate(config[1], record)),
-        '$lte': (config, record) => Number(this.evaluate(config[0], record)) <= Number(this.evaluate(config[1], record)),
-
-        '$in': (config, record) => {
-            const val = this.evaluate(config[0], record);
-            const arr = this.evaluate(config[1], record);
+    private readonly operatorsRegistry: Record<string, (args: any, record: any) => any> = {
+        // 1. LÓGICOS Y COMPARACIÓN
+        '$eq': (args, record) => this.evaluate(args.val1, record) === this.evaluate(args.val2, record),
+        '$ne': (args, record) => this.evaluate(args.val1, record) !== this.evaluate(args.val2, record),
+        '$gt': (args, record) => Number(this.evaluate(args.val1, record)) > Number(this.evaluate(args.val2, record)),
+        '$gte': (args, record) => Number(this.evaluate(args.val1, record)) >= Number(this.evaluate(args.val2, record)),
+        '$lt': (args, record) => Number(this.evaluate(args.val1, record)) < Number(this.evaluate(args.val2, record)),
+        '$lte': (args, record) => Number(this.evaluate(args.val1, record)) <= Number(this.evaluate(args.val2, record)),
+        '$in': (args, record) => {
+            const val = this.evaluate(args.val1, record);
+            const arr = this.evaluate(args.val2, record);
             return Array.isArray(arr) ? arr.some(item => String(item).trim() === String(val).trim()) : false;
         },
-        '$nin': (config, record) => !this.operatorsRegistry['$in'](config, record),
-
-        '$exists': (config, record) => {
-            const val = this.evaluate(config, record);
+        '$nin': (args, record) => !this.operatorsRegistry['$in'](args, record),
+        '$exists': (args, record) => {
+            const val = this.evaluate(args.val, record);
             return val !== undefined && val !== null && String(val).trim() !== '';
         },
-
-        '$regex': (config, record) => {
-            const val = String(this.evaluate(config[0], record) || '');
-            const pattern = this.evaluate(config[1], record);
+        '$regex': (args, record) => {
+            const val = String(this.evaluate(args.val, record) || '');
+            const pattern = this.evaluate(args.pattern, record);
             return new RegExp(pattern, 'i').test(val);
         },
-
-        '$if': (config, record) => {
-            const condition = this.evaluate(config.if ?? config[0], record);
-            return condition ? this.evaluate(config.then ?? config[1], record) : this.evaluate(config.else ?? config[2], record);
+        '$if': (args, record) => {
+            const condition = this.evaluate(args.if, record);
+            return condition ? this.evaluate(args.then, record) : this.evaluate(args.else, record);
         },
 
-        // =========================================================================
-        // 2. OPERADORES MATEMÁTICOS
-        // =========================================================================
-        '$multiply': (config, record) => {
-            if (!Array.isArray(config)) return 0;
-            return config.reduce((acc, curr) => acc * (Number(this.evaluate(curr, record)) || 0), 1);
+        // 2. MATEMÁTICOS
+        '$multiply': (args, record) => {
+            const values = Array.isArray(args.values) ? args.values : [];
+            return values.reduce((acc, curr) => acc * (Number(this.evaluate(curr, record)) || 0), 1);
         },
-
-        '$inc': (config, record) => {
-            const base = Number(this.evaluate(config.current ?? config[0], record)) || 0;
-            const val = Number(this.evaluate(config.val ?? config[1], record)) || 0;
-            return base + val;
+        '$inc': (args, record) => Number(this.evaluate(args.current, record) || 0) + Number(this.evaluate(args.val, record) || 0),
+        '$minMax': (args, record) => {
+            const current = this.evaluate(args.current, record);
+            const target = Number(this.evaluate(args.target ?? 0, record));
+            const type = args.type || 'sum';
+            if (current === undefined || current === null || current === '' || isNaN(Number(current))) return target;
+            return type === 'min' ? Math.min(Number(current), target) : Math.max(Number(current), target);
         },
-
-        '$minMax': (config, record) => {
-            const current = this.evaluate(config.current ?? config[0], record);
-            const target = Number(this.evaluate(config.target ?? config[1], record) ?? 0);
-            const type = this.evaluate(config.type ?? config[2], record) || 'sum';
-
-            if (current === undefined || current === null || current === '') return target;
-            const currentNum = Number(current);
-            if (isNaN(currentNum)) return target;
-
-            return type === 'min' ? Math.min(currentNum, target) : Math.max(currentNum, target);
-        },
-
-        '$round': (config, record) => {
-            const val = parseFloat(this.evaluate(config.value ?? config[0], record));
-            const decimals = Number(this.evaluate(config.decimals ?? config[1], record)) || 2;
+        '$round': (args, record) => {
+            const val = parseFloat(this.evaluate(args.value, record));
+            const decimals = Number(this.evaluate(args.decimals ?? 2, record));
             if (isNaN(val)) return 0;
             const factor = Math.pow(10, decimals);
             return Math.round(val * factor) / factor;
         },
-
-        '$math': (config, record) => {
-            const expression = this.evaluate(config, record);
+        '$math': (args, record) => {
+            const expression = this.evaluate(args.expression, record);
             if (!expression || typeof expression !== 'string') return 0;
             try {
                 const rawData = this.extractRawData(record);
-                const resolved = expression.replace(/\$([a-zA-Z0-9_]+)/g, (_, field) => {
-                    return `(${Number(rawData && rawData[field] !== undefined ? rawData[field] : 0)})`;
-                });
-
-                const safeExpression = resolved.replace(/[^0-9+\-*/().\s,Mathabsroundceilfloor-]/g, '');
-                return Function(`"use strict"; return (${safeExpression})`)();
-            } catch (error) {
-                this.logger.error(`[MathHandler] Error evaluando: ${expression}`, error);
-                return 0;
-            }
+                const resolved = expression.replace(/\$([a-zA-Z0-9_]+)/g, (_, field) => `(${Number(rawData?.[field] ?? 0)})`);
+                return Function(`"use strict"; return (${resolved.replace(/[^0-9+\-*/().\s,Mathabsroundceilfloor-]/g, '')})`)();
+            } catch { return 0; }
         },
 
-        // =========================================================================
-        // 3. MUTADORES DE CADENA
-        // =========================================================================
-        '$upper': (config, record) => String(this.evaluate(config, record) || '').toUpperCase(),
-        '$trim': (config, record) => String(this.evaluate(config, record) || '').trim(),
-        '$concat': (config, record) => {
-            const parts = Array.isArray(config) ? config : [config];
-            return parts.map(p => String(this.evaluate(p, record) ?? '')).join('');
+        // 3. CADENAS
+        '$upper': (args, record) => String(this.evaluate(args.val, record) || '').toUpperCase(),
+        '$trim': (args, record) => String(this.evaluate(args.val, record) || '').trim(),
+        '$concat': (args, record) => (Array.isArray(args.parts) ? args.parts : [args.parts]).map(p => String(this.evaluate(p, record) ?? '')).join(''),
+
+        // 4. TIEMPO
+        '$year': (args, record) => this.safeDayjs(this.evaluate(args.val, record))?.year() || 0,
+        '$month': (args, record) => (this.safeDayjs(this.evaluate(args.val, record))?.month() || -1) + 1,
+        '$day': (args, record) => this.safeDayjs(this.evaluate(args.val, record))?.date() || 0,
+        '$dateAdd': (args, record) => {
+            const d = this.safeDayjs(this.evaluate(args.startDate, record));
+            return d ? d.add(Number(args.amount), args.unit ?? 'day').format('YYYY-MM-DD HH:mm:ss') : '';
         },
-
-        // =========================================================================
-        // 4. TIEMPO Y FECHAS
-        // =========================================================================
-        '$year': (config, record) => this.safeDayjs(this.evaluate(config, record))?.year() || 0,
-        '$month': (config, record) => {
-            const d = this.safeDayjs(this.evaluate(config, record));
-            return d ? d.month() + 1 : 0;
-        },
-        '$day': (config, record) => this.safeDayjs(this.evaluate(config, record))?.date() || 0,
-        '$hour': (config, record) => this.safeDayjs(this.evaluate(config, record))?.hour() || 0,
-        '$minute': (config, record) => this.safeDayjs(this.evaluate(config, record))?.minute() || 0,
-        '$second': (config, record) => this.safeDayjs(this.evaluate(config, record))?.second() || 0,
-        '$dayOfWeek': (config, record) => {
-            const d = this.safeDayjs(this.evaluate(config, record));
-            return d ? d.day() + 1 : 0;
-        },
-        '$week': (config, record) => this.safeDayjs(this.evaluate(config, record))?.week() || 0,
-
-        '$dateAdd': (config, record) => {
-            const baseDate = this.evaluate(config.startDate ?? config[0], record);
-            const amount = Number(this.evaluate(config.amount ?? config[1], record)) || 0;
-            const unit = this.evaluate(config.unit ?? config[2], record) || 'day';
-
-            const d = this.safeDayjs(baseDate);
-            if (!d) return '';
-            return d.add(amount, unit as any).format('YYYY-MM-DD HH:mm:ss');
-        },
-
-        '$timeDiff': (config, record) => {
-            const startRaw = this.evaluate(config.start, record);
-            const endRaw = this.evaluate(config.end, record);
-            const unit = this.evaluate(config.unit, record) || 'hour';
-
-            if (!startRaw || !endRaw) return 0;
-
-            const parseDate = (val: any) => {
-                if (typeof val === 'string' && val.includes(':') && !val.includes('-')) {
-                    const [hh, mm] = val.split(':');
-                    return dayjs().hour(parseInt(hh)).minute(parseInt(mm)).second(0).millisecond(0);
-                }
-                return dayjs(val);
-            };
-
-            const start = parseDate(startRaw);
-            const end = parseDate(endRaw);
+        '$timeDiff': (args, record) => {
+            const start = dayjs(this.evaluate(args.start, record));
+            const end = dayjs(this.evaluate(args.end, record));
             if (!start.isValid() || !end.isValid()) return 0;
-
-            let diff = end.diff(start, unit as any, true);
-
-            // ✅ CORRECCIÓN: Rescate nocturno extendido a minutos y segundos para tareajes precisos
-            if (diff < 0) {
-                if (unit === 'hour') diff += 24;
-                else if (unit === 'minute') diff += 1440;
-                else if (unit === 'second') diff += 86400;
-            }
-
-            return Math.round(diff * 100) / 100;
+            return Math.round(end.diff(start, args.unit ?? 'hour', true) * 100) / 100;
         },
 
-        // =========================================================================
-        // 5. COLECCIONES Y ESTADÍSTICAS
-        // =========================================================================
-        '$aggregate': (config, record) => {
-            const values = this.evaluate(config.values ?? config[0], record);
-            const type = this.evaluate(config.type ?? config[1], record) || 'sum';
-            if (!Array.isArray(values) || values.length === 0) return 0;
-
-            let sum = 0, count = 0, min = Infinity, max = -Infinity;
-
-            for (const raw of values) {
-                let val = raw;
-                if (typeof raw === 'string') {
-                    // ✅ CORRECCIÓN: Sanitización exacta eliminando símbolos monetarios de Latam/US y espacios
-                    let cleaned = raw.replace(/[S\/\.\$\s]/g, '');
-
-                    // Si trae comas de miles y punto decimal (ej: 1,250.50) -> removemos la coma
-                    if (cleaned.includes(',') && cleaned.includes('.')) {
-                        cleaned = cleaned.replace(/,/g, '');
-                    } else if (cleaned.includes(',')) {
-                        // Si solo trae comas, es el estándar hispanohablante de decimales (ej: 1250,50)
-                        cleaned = cleaned.replace(',', '.');
-                    }
-                    val = cleaned;
-                }
-                const num = parseFloat(val);
-                if (!isNaN(num)) {
-                    sum += num;
-                    count++;
-                    if (num < min) min = num;
-                    if (num > max) max = num;
-                }
-            }
-
-            if (count === 0) return 0;
+        // 5. COLECCIONES
+        '$aggregate': (args, record) => {
+            const values = (Array.isArray(args.values) ? args.values : []).map(v => this.evaluate(v, record));
+            const type = args.type || 'sum';
+            const nums = values.map(v => typeof v === 'string' ? parseFloat(v.replace(/[S\/\.\$\s,]/g, '')) : v).filter(n => !isNaN(n));
+            if (nums.length === 0) return 0;
+            const sum = nums.reduce((a, b) => a + b, 0);
             switch (type) {
                 case 'sum': return sum;
-                case 'avg': return sum / count;
-                case 'count': return count;
-                case 'min': return min;
-                case 'max': return max;
+                case 'avg': return sum / nums.length;
+                case 'count': return nums.length;
+                case 'min': return Math.min(...nums);
+                case 'max': return Math.max(...nums);
                 default: return sum;
             }
         }
@@ -258,14 +153,51 @@ export class ExpressionEngine {
 
         return expression;
     }
+    public getNestedValue(obj: any, path: string): any {
+        if (!obj || !path) return undefined;
+        return path.split('.').reduce((acc, part) => (acc && acc[part] !== undefined) ? acc[part] : undefined, obj);
+    }
+    public evaluateFilter(record: any, filter: Record<string, any>): boolean {
+        const rawData = this.extractRawData(record);
+        if (!filter || typeof filter !== 'object') return true;
+
+        return Object.entries(filter).every(([key, condition]) => {
+            // A. Manejo de Operadores Lógicos (Recursivos)
+            if (key === '$and') return (condition as any[]).every(f => this.evaluateFilter(rawData, f));
+            if (key === '$or') return (condition as any[]).some(f => this.evaluateFilter(rawData, f));
+            if (key === '$nor') return !(condition as any[]).some(f => this.evaluateFilter(rawData, f));
+            if (key === '$not') return !this.evaluateFilter(rawData, condition);
+
+            // B. Manejo de Campo (Acceso a dato y Comparación)
+            const value = this.getNestedValue(rawData, key);
+            return this.compareValue(value, condition);
+        });
+    }
 
     private runOperator(op: string, config: any, record: any): any {
         const handler = this.operatorsRegistry[op];
-        if (!handler) {
-            this.logger.warn(`[ExpressionEngine] Operador no soportado o inexistente: [${op}]`);
-            return null;
+        if (!handler) return null;
+
+        // Esquemas posicionales para los operadores que los necesitan
+        const schemas: Record<string, string[]> = {
+            '$eq': ['val1', 'val2'], '$ne': ['val1', 'val2'],
+            '$gt': ['val1', 'val2'], '$gte': ['val1', 'val2'],
+            '$lt': ['val1', 'val2'], '$lte': ['val1', 'val2'],
+            '$in': ['val1', 'val2'], '$nin': ['val1', 'val2'],
+            '$regex': ['val', 'pattern'], '$round': ['value', 'decimals'],
+            '$inc': ['current', 'val'], '$dateAdd': ['startDate', 'amount', 'unit']
+        };
+
+        // Normalización: Si es array, lo convertimos a objeto usando el esquema
+        let args = config;
+        if (Array.isArray(config) && schemas[op]) {
+            args = schemas[op].reduce((acc, key, i) => ({ ...acc, [key]: config[i] }), {});
+        } else if (!Array.isArray(config) && typeof config !== 'object') {
+            // Caso de valor único (ej: $upper: "TEXTO")
+            args = { val: config };
         }
-        return handler(config, record);
+
+        return handler(args, record);
     }
 
     private isOperatorObject(obj: any): boolean {
@@ -284,5 +216,43 @@ export class ExpressionEngine {
         if (val === undefined || val === null || String(val).trim() === '') return null;
         const d = dayjs(val);
         return d.isValid() ? d : null;
+    }
+    private normalizeArgs(config: any, schema: string[]): Record<string, any> {
+        // Si es un objeto, ya está normalizado
+        if (typeof config === 'object' && !Array.isArray(config)) return config;
+
+        // Si es un array, lo mapeamos al esquema de nombres esperado
+        if (Array.isArray(config)) {
+            return schema.reduce((acc, key, index) => {
+                acc[key] = config[index];
+                return acc;
+            }, {} as Record<string, any>);
+        }
+
+        // Si es un valor simple (ej: $round: 5), lo devolvemos como el primer argumento
+        return { value: config };
+    }
+    private compareValue(fieldValue: any, condition: any): boolean {
+        // Caso: Igualdad directa (ej: { status: 'ACTIVO' })
+        if (condition === null || typeof condition !== 'object' || condition instanceof Date) {
+            return fieldValue === condition;
+        }
+
+        // Caso: Operadores (ej: { $gt: 10 })
+        return Object.entries(condition).every(([operator, targetValue]) => {
+            if (operator === '$options') return true; // Se maneja dentro de $regex
+            if (!operator.startsWith('$')) return fieldValue === targetValue;
+
+            // Preparamos argumentos para el Registry
+            const args = {
+                val1: fieldValue,
+                val2: targetValue,
+                val: fieldValue,
+                pattern: targetValue,
+                options: condition['$options'] || 'i'
+            };
+
+            return this.runOperator(operator, args, {});
+        });
     }
 }

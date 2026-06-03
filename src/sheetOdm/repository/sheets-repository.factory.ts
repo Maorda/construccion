@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
-import { QueryEngine } from '@sheetOdm/pipelines/query.engine';
+
 import { SheetsRepository } from './sheets.repository';
 import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
 import { RelationManager } from '@sheetOdm/services/relation-manager.service';
@@ -8,6 +8,8 @@ import { DataMapper } from '@sheetOdm/services/data-mapper.service';
 import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
 import { ModuleRef } from '@nestjs/core';
 import { ClassType } from '@sheetOdm/types/query.types';
+import { UnitOfWork } from '@sheetOdm/services/UnitOfWork';
+import { QueryEngine } from '@sheetOdm/engines/query.engine';
 
 @Injectable()
 export class SheetsRepositoryFactory<T extends object> {
@@ -19,6 +21,7 @@ export class SheetsRepositoryFactory<T extends object> {
         private readonly relationManager: RelationManager,
         private readonly dataMapper: DataMapper,
         private readonly hydrator: SheetDocumentHydrator,
+        private readonly unitOfWork: UnitOfWork,
 
         private moduleRef: ModuleRef,
     ) { }
@@ -36,6 +39,8 @@ export class SheetsRepositoryFactory<T extends object> {
             this.dataMapper,
             this.moduleRef,
             this.hydrator,
+            this.unitOfWork,
+
         );
     }
 }

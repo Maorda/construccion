@@ -1,14 +1,3 @@
-export type PipelineStage =
-    | { $match: Record<string, any> }
-    | { $lookup: LookupConfig }
-    | { $unwind: string | { path: string; preserveNullAndEmptyArrays?: boolean } }
-    | { $project: Record<string, any> }
-    | { $addFields: Record<string, any> }
-    | { $group: GroupConfig }
-    | { $sort: Record<string, 1 | -1> }
-    | { $limit: number }
-    | { $skip: number };
-
 /**
  * Configuración para la etapa de agrupación.
  */

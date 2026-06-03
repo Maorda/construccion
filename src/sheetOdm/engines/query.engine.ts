@@ -1,14 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { AggregationPipeline, FilterQuery, IQueryEngine, QueryOptions } from '@sheetOdm/types/query.types';
-import { MatchStage, SortStage } from '../engines/query/match_sort_pagination';
-import { ProjectStage } from '../engines/query/projection';
-import { AddFieldsStage } from './stages/add-fields.stage';
-import { GroupStage } from './stages/group.stage';
-import { LimitStage } from './stages/limit.stage';
-import { LookupStage } from './stages/lookup.stage';
-import { SkipStage } from './stages/skip.stage';
-import { UnwindStage } from './stages/unwind.stage';
 import { IQueryStage } from '@sheetOdm/pipelines/stages/IqueryStages';
+import { LookupStage, GroupStage, UnwindStage } from '@sheetOdm/pipelines/stages/Estructura_Compleja';
+import { MatchStage, ProjectStage, AddFieldsStage } from '@sheetOdm/pipelines/stages/filtrado_y_transformacion';
+import { SortStage, LimitStage, SkipStage } from '@sheetOdm/pipelines/stages/orden_y_paginacion';
 
 
 @Injectable()
@@ -37,6 +32,10 @@ export class QueryEngine implements IQueryEngine {
             ['$addFields', this.addFields],
             ['$limit', this.limit],
             ['$skip', this.skip]
+
+
+
+
         ];
 
         this.stageRegistry = new Map<string, IQueryStage>(stages);
@@ -83,7 +82,7 @@ export class QueryEngine implements IQueryEngine {
 
     public async aggregate<T, R = any>(
         data: T[],
-        pipeline: AggregationPipeline<T>
+        pipeline: AggregationPipeline
     ): Promise<R[]> {
         // Validación de pipeline vacío
         if (!pipeline || pipeline.length === 0) {

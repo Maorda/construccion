@@ -1,3 +1,4 @@
+import { GroupConfig, LookupConfig } from "@sheetOdm/pipelines/types";
 import { SheetsRepository } from "@sheetOdm/repository/sheets.repository";
 import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument";
 
@@ -33,7 +34,7 @@ export interface FindOneAndUpdateOptions<T extends object, U = any> extends Quer
 
 export interface IQueryEngine {
     execute<T>(data: T[], filter: FilterQuery<T>, options?: QueryOptions): Promise<T[]>;
-    aggregate<T, R = any>(data: T[], pipeline: AggregationPipeline<T>): Promise<R[]>;
+    aggregate<R = any>(data: any[], pipeline: AggregationPipeline): Promise<R[]>;
 }
 
 // Tipo auxiliar para las opciones de consulta
@@ -47,16 +48,18 @@ export interface QueryOptions<T = any> {
     forceRefresh?: boolean;
     customConstructor?: ConstructorSignature<T, any>;
 }
-export type PipelineStage<T = any> =
-    | { $match: FilterQuery<T> }
-    | { $project: Record<keyof T | string, 0 | 1 | boolean> }
-    | { $group: { _id: any;[key: string]: any } }
-    | { $sort: { [P in keyof T]?: 1 | -1 } | Record<string, 1 | -1> }
+export type PipelineStage =
+    | { $match: Record<string, any> }
+    | { $lookup: LookupConfig }
+    | { $unwind: string | { path: string; preserveNullAndEmptyArrays?: boolean } }
+    | { $project: Record<string, any> }
+    | { $addFields: Record<string, any> }
+    | { $group: GroupConfig }
+    | { $sort: Record<string, 1 | -1> }
     | { $limit: number }
-    | { $skip: number }
-    | { $lookup: { from: string; localField: string; foreignField: string; as: string } };
+    | { $skip: number };
 
-export type AggregationPipeline<T = any> = PipelineStage<T>[];
+export type AggregationPipeline = PipelineStage[];
 
 export type ComparisonOperators<T> = {
     $eq?: T;

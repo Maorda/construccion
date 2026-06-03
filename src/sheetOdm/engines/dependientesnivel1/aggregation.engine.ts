@@ -1,44 +1,29 @@
-import { Logger } from "@nestjs/common";
-
+import { Logger, Injectable } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
-import { ExpressionEngine } from "./expression.engine";
 import { LookupConfig } from "@sheetOdm/pipelines/types";
+import { ExpressionEngine } from "../independientes/expression.engine";
+import { MetadataRegistry } from "@sheetOdm/services/metadata-registry.service";
 
+@Injectable()
 export class AggregationEngine {
     private readonly logger = new Logger(AggregationEngine.name);
+
+    // Mapa de manejadores para evitar el switch gigante
+    private readonly pipelineHandlers: Record<string, (data: any[], config: any) => Promise<any[]> | any[]> = {
+        '$match': (data, config) => data.filter(item => this.expressionEngine.evaluateFilter(item, config)),
+        '$lookup': (data, config) => this.executeLookup(data, config),
+        '$unwind': (data, config) => this.executeUnwind(data, config),
+        '$addFields': (data, config) => this.applyTransform(data, config, true),
+        '$project': (data, config) => this.applyTransform(data, config, false),
+        '$group': (data, config) => this.executeGroup(data, config),
+        '$sort': (data, config) => this.executeSort(data, config),
+    };
+
     constructor(
-        private expressionEngine: ExpressionEngine,
-        protected readonly moduleRef: ModuleRef,
+        private readonly expressionEngine: ExpressionEngine,
+        private readonly moduleRef: ModuleRef,
+        private readonly metadataRegistry: MetadataRegistry
     ) { }
-
-
-    private applyMatch(item: any, query: Record<string, any>): boolean {
-        // Recorremos cada condición del filtro (ej: { estado: 'ACTIVO', sueldo: { $gt: 1500 } })
-        return Object.entries(query).every(([key, condition]) => {
-            const value = item[key];
-
-            // Si la condición es un objeto (operador como $gt, $in, $ne)
-            if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
-                const operator = Object.keys(condition)[0];
-                const target = condition[operator];
-
-                switch (operator) {
-                    case '$gt': return value > target;
-                    case '$gte': return value >= target;
-                    case '$lt': return value < target;
-                    case '$lte': return value <= target;
-                    case '$ne': return value !== target;
-                    case '$in': return Array.isArray(target) && target.includes(value);
-                    case '$nin': return Array.isArray(target) && !target.includes(value);
-                    case '$regex': return new RegExp(target, 'i').test(String(value));
-                    default: return false;
-                }
-            }
-
-            // Comparación directa de igualdad
-            return value === condition;
-        });
-    }
 
     async run(data: any[], pipeline: any[]): Promise<any[]> {
         let result = [...data];
@@ -46,85 +31,116 @@ export class AggregationEngine {
         for (const stage of pipeline) {
             const operator = Object.keys(stage)[0];
             const config = stage[operator];
+            const handler = this.pipelineHandlers[operator];
 
-            switch (operator) {
-                case '$match':
-                    result = result.filter(item => this.expressionEngine.evaluateFilter(item, config));
-                    break;
-                case '$lookup':
-                    result = await this.executeLookup(result, config);
-                    break;
-                case '$unwind':
-                    result = this.executeUnwind(result, config);
-                    break;
-                case '$addFields':
-                case '$project':
-                    result = result.map(item => ({
-                        ...item,
-                        ...this.expressionEngine.execute(item, config)
-                    }));
-                    break;
-                case '$group':
-                    result = this.executeGroup(result, config);
-                    break;
-                case '$sort':
-                    result = this.executeSort(result, config);
-                    break;
-                default:
-                    this.logger.warn(`[AggregationEngine] Operador de pipeline no soportado: ${operator}`);
+            if (!handler) {
+                this.logger.warn(`[AggregationEngine] Operador no soportado: ${operator}`);
+                continue;
             }
+
+            result = await Promise.resolve(handler(result, config));
         }
         return result;
     }
 
+    // --- MANEJADORES PRIVADOS ---
+
     private async executeLookup(currentData: any[], config: LookupConfig): Promise<any[]> {
         const { from, localField, foreignField, as } = config;
 
-        // Resolución dinámica del token del repositorio basado en el nombre de la pestaña
-        const camelCase = from.toLowerCase().replace(/_([a-z])/g, (_, g) => g.toUpperCase());
-        const pascalCase = camelCase.charAt(0).toUpperCase() + camelCase.slice(1);
-        const repositoryToken = `${pascalCase}Repository`;
+        // 1. Resolvemos la clase real usando nuestro Registro de Metadatos
+        const entityClass = this.metadataRegistry.getEntityBySheetName(from);
 
-        let foreignData: any[] = [];
-        try {
-            const foreignRepository = this.moduleRef.get(repositoryToken, { strict: false });
-
-            if (foreignRepository && typeof foreignRepository.findAllRaw === 'function') {
-                foreignData = await foreignRepository.findAllRaw();
-            } else if (foreignRepository && typeof foreignRepository.find === 'function') {
-                foreignData = await foreignRepository.find({}, { includeInactive: true });
-            } else {
-                throw new Error(`El repositorio no posee métodos válidos de extracción de datos.`);
-            }
-        } catch (error: any) {
-            this.logger.error(`[Lookup Error] Fallo al cruzar pestaña '${from}': ${error.message}`);
-            foreignData = [];
+        if (!entityClass) {
+            this.logger.error(`[Lookup] No se encontró entidad registrada para la hoja: '${from}'`);
+            return currentData;
         }
 
-        // Construcción del índice mapeado en memoria O(1)
+        // 2. Construimos el token oficial que usa OdmSheetModule
+        const repositoryToken = `${entityClass.name}Repository`;
+        const foreignRepository = this.moduleRef.get(repositoryToken, { strict: false });
+
+        if (!foreignRepository) {
+            this.logger.error(`[Lookup] Repositorio no encontrado: ${repositoryToken}`);
+            return currentData;
+        }
+
+        // ... (el resto del código de búsqueda es igual)
+        const foreignData = await foreignRepository.findAllRaw?.() ?? await foreignRepository.find?.({}, { includeInactive: true }) ?? [];
         const indexMap = this.createIndexMap(foreignData, foreignField);
 
-        // Cruce secuencial sobre el hilo de datos actual
-        return currentData.map(item => {
-            const localVal = String(item[localField] ?? '');
-            return {
-                ...item,
-                [as]: indexMap.get(localVal) || []
-            };
+        return currentData.map(item => ({
+            ...item,
+            [as]: indexMap.get(String(item[localField] ?? '')) || []
+        }));
+    }
+
+    private executeGroup(data: any[], config: any): any[] {
+        const { _id, ...accumulators } = config;
+        const groups = new Map<string, any>();
+
+        // Símbolos para evitar colisiones con datos del usuario
+        const AGG_SUM = Symbol('sum');
+        const AGG_CNT = Symbol('cnt');
+
+        for (const item of data) {
+            const groupId = (_id && typeof _id === 'string' && _id.startsWith('$'))
+                ? item[_id.substring(1)] : 'root';
+
+            if (!groups.has(groupId)) groups.set(groupId, { _id: groupId });
+            const group = groups.get(groupId);
+
+            for (const [key, accConfig] of Object.entries<any>(accumulators)) {
+                const [op, fieldPath] = Object.entries(accConfig)[0];
+                const value = (typeof fieldPath === 'string' && fieldPath.startsWith('$'))
+                    ? item[fieldPath.substring(1)] : null;
+
+                switch (op) {
+                    case '$sum':
+                        group[key] = (group[key] || 0) + (Number(value) || 0);
+                        break;
+                    case '$count':
+                        group[key] = (group[key] || 0) + 1;
+                        break;
+                    case '$avg':
+                        group[key] = group[key] || { [AGG_SUM]: 0, [AGG_CNT]: 0 };
+                        group[key][AGG_SUM] += (Number(value) || 0);
+                        group[key][AGG_CNT] += 1;
+                        break;
+                }
+            }
+        }
+
+        return Array.from(groups.values()).map(g => {
+            for (const key in g) {
+                if (g[key] && typeof g[key] === 'object' && AGG_SUM in g[key]) {
+                    g[key] = g[key][AGG_SUM] / g[key][AGG_CNT];
+                }
+            }
+            return g;
         });
     }
 
-    private createIndexMap(data: any[], key: string): Map<string, any[]> {
-        const index = new Map<string, any[]>();
-        for (const item of data) {
-            const val = String(item[key] ?? '');
-            if (!index.has(val)) index.set(val, []);
-            index.get(val)!.push(item);
-        }
-        return index;
+    private applyTransform(data: any[], config: any, keepExisting: boolean): any[] {
+        return data.map(item => ({
+            ...(keepExisting ? item : {}),
+            ...this.expressionEngine.execute(item, config)
+        }));
     }
 
-    private executeUnwind(data: any[], path: string): any[] {
+    private createIndexMap(data: any[], key: string): Map<string, any[]> {
+        return data.reduce((map, item) => {
+            const val = String(item[key] ?? '');
+            if (!map.has(val)) map.set(val, []);
+            map.get(val)!.push(item);
+            return map;
+        }, new Map<string, any[]>());
+    }
+
+    private executeUnwind(data: any[], config: any): any[] {
+        const path = typeof config === 'string' ? config : config.path;
+        const preserveNull = typeof config === 'object' && config.preserveNullAndEmptyArrays === true;
+
         const field = path.startsWith('$') ? path.substring(1) : path;
         const result: any[] = [];
 
@@ -135,75 +151,22 @@ export class AggregationEngine {
                 for (const subItem of arrayToUnwind) {
                     result.push({ ...item, [field]: subItem });
                 }
-            } else {
+            } else if (preserveNull) {
                 result.push({ ...item, [field]: null });
             }
         }
         return result;
     }
 
-    private executeGroup(data: any[], config: any): any[] {
-        const { _id, ...accumulators } = config;
-        const groups = new Map<string, any>();
-
-        for (const item of data) {
-            const groupId = _id && typeof _id === 'string' && _id.startsWith('$')
-                ? item[_id.substring(1)]
-                : 'root';
-
-            if (!groups.has(groupId)) {
-                groups.set(groupId, { _id: groupId });
-            }
-
-            const group = groups.get(groupId);
-
-            for (const [key, accConfig] of Object.entries<any>(accumulators)) {
-                const operator = Object.keys(accConfig)[0];
-                const fieldPath = accConfig[operator];
-                const value = typeof fieldPath === 'string' && fieldPath.startsWith('$')
-                    ? item[fieldPath.substring(1)]
-                    : null;
-
-                switch (operator) {
-                    case '$sum':
-                        group[key] = (group[key] || 0) + (Number(value) || 0);
-                        break;
-                    case '$count':
-                        group[key] = (group[key] || 0) + 1;
-                        break;
-                    case '$avg':
-                        group[`${key}_sum`] = (group[`${key}_sum`] || 0) + (Number(value) || 0);
-                        group[`${key}_cnt`] = (group[`${key}_cnt`] || 0) + 1;
-                        group[key] = group[`${key}_sum`] / group[`${key}_cnt`];
-                        break;
-                    case '$push':
-                        if (!group[key]) group[key] = [];
-                        group[key].push(item);
-                        break;
-                }
-            }
-        }
-
-        return Array.from(groups.values()).map(g => {
-            Object.keys(g).forEach(k => {
-                if (k.includes('_sum') || k.includes('_cnt')) delete g[k];
-            });
-            return g;
-        });
-    }
-
+    // 4. Implementación optimizada de Sort
     private executeSort(data: any[], sortConfig: Record<string, 1 | -1>): any[] {
         return [...data].sort((a, b) => {
-            for (const key in sortConfig) {
-                const dir = sortConfig[key];
-                if (a[key] > b[key]) return dir;
-                if (a[key] < b[key]) return -dir;
+            for (const [key, dir] of Object.entries(sortConfig)) {
+                if (a[key] === b[key]) continue;
+                // dir es 1 o -1, lo que permite invertir la comparación dinámicamente
+                return a[key] > b[key] ? dir : -dir;
             }
             return 0;
         });
     }
-
-
-
-
 }
