@@ -8,18 +8,17 @@ export class HydrationEngine {
 
     constructor(private readonly metadataRegistry: MetadataRegistry) { }
 
-    /**
-     * Convierte datos crudos de la hoja a tipos de TS/JS definidos en metadata.
-     */
     public hydrate<T extends object>(entityClass: ClassType<T>, rawRow: any): T {
         if (!rawRow || typeof rawRow !== 'object') return rawRow;
 
         const hydrated = { ...rawRow };
-        const columnsMetadata = this.metadataRegistry.getColumnDetails(entityClass);
+        // Usamos el esquema cacheado para máxima velocidad
+        const columnsMetadata = this.metadataRegistry.getSchema(entityClass).columns;
         if (!columnsMetadata) return hydrated as T;
 
         for (const key in hydrated) {
             const value = hydrated[key];
+            // Permitimos pasar valores falsy como el número 0 o booleanos falsos
             if (value === null || value === undefined || value === '') continue;
 
             const colMeta = columnsMetadata[key];
@@ -31,14 +30,12 @@ export class HydrationEngine {
         return hydrated as T;
     }
 
-    /**
-     * Prepara el objeto para ser enviado a Google Sheets (Serialización inversa).
-     */
     public serialize(data: any): any {
         const serialized = { ...data };
         for (const key in serialized) {
             const value = serialized[key];
             if (value instanceof Date) {
+                // ISO String para uniformidad en la hoja de cálculo
                 serialized[key] = value.toISOString();
             } else if (typeof value === 'object' && value !== null) {
                 serialized[key] = JSON.stringify(value);
@@ -54,23 +51,29 @@ export class HydrationEngine {
                 return isNaN(date.getTime()) ? value : date;
             }
             if (targetType === Number || targetType === 'number') {
-                const num = Number(value);
+                // Removemos posibles comas de miles antes de parsear si viene como string
+                const cleanStr = typeof value === 'string' ? value.replace(/,/g, '') : value;
+                const num = Number(cleanStr);
                 return isNaN(num) ? value : num;
             }
             if (targetType === Boolean || targetType === 'boolean') {
-                return String(value).toLowerCase() === 'true' || value === '1' || value === 1 || value === true;
+                if (typeof value === 'boolean') return value;
+                const str = String(value).toLowerCase().trim();
+                // Soportamos 'verdadero' por si el locale de Sheets está en español
+                return str === 'true' || str === 'verdadero' || str === '1';
             }
-            if (['json', 'JSON', 'Array', 'Object'].includes(targetType)) {
+            if (['json', 'array', 'object'].includes(String(targetType).toLowerCase())) {
                 if (typeof value === 'string') {
                     const trimmed = value.trim();
-                    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+                        (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
                         return JSON.parse(trimmed);
                     }
                 }
             }
-        } catch (e) {
-            this.logger.warn(`Error hidratando valor: ${value} a tipo ${targetType}`);
+        } catch (e: any) {
+            this.logger.warn(`Error hidratando valor "${value}" a tipo ${targetType}: ${e.message}`);
         }
-        return value;
+        return value; // Fallback al valor crudo si falla el casteo
     }
 }

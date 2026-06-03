@@ -5,10 +5,9 @@ import { LookupStage, GroupStage, UnwindStage } from '@sheetOdm/pipelines/stages
 import { MatchStage, ProjectStage, AddFieldsStage } from '@sheetOdm/pipelines/stages/filtrado_y_transformacion';
 import { SortStage, LimitStage, SkipStage } from '@sheetOdm/pipelines/stages/orden_y_paginacion';
 
-
 @Injectable()
 export class QueryEngine implements IQueryEngine {
-    private stageRegistry: Map<string, IQueryStage>;
+    private readonly stageRegistry: Map<string, IQueryStage>;
 
     constructor(
         private readonly match: MatchStage,
@@ -21,8 +20,7 @@ export class QueryEngine implements IQueryEngine {
         private readonly limit: LimitStage,
         private readonly skip: SkipStage,
     ) {
-        // La clave aquí es decirle a TS que el array contiene pares de [string, IQueryStage]
-        const stages: [string, IQueryStage][] = [
+        this.stageRegistry = new Map<string, IQueryStage>([
             ['$match', this.match],
             ['$project', this.project],
             ['$lookup', this.lookup],
@@ -32,18 +30,9 @@ export class QueryEngine implements IQueryEngine {
             ['$addFields', this.addFields],
             ['$limit', this.limit],
             ['$skip', this.skip]
-
-
-
-
-        ];
-
-        this.stageRegistry = new Map<string, IQueryStage>(stages);
+        ]);
     }
 
-    /**
-     * Ejecuta una consulta de filtrado, ordenamiento y paginación sobre una colección en memoria.
-     */
     public async execute<T>(data: T[], filter: FilterQuery<T>, options?: QueryOptions): Promise<any[]> {
         const pipeline: any[] = [];
 
@@ -57,6 +46,7 @@ export class QueryEngine implements IQueryEngine {
 
         return await this.aggregate(data, pipeline);
     }
+
     private validatePipeline(pipeline: any[]): void {
         if (!Array.isArray(pipeline)) {
             throw new Error("[QueryEngine] El pipeline debe ser un array de estadios.");
@@ -71,7 +61,6 @@ export class QueryEngine implements IQueryEngine {
                 throw new Error(`[QueryEngine] Operador no soportado: ${operator}`);
             }
 
-            // Llamamos al nuevo método de validación
             try {
                 handler.validate(config);
             } catch (error: any) {
@@ -80,42 +69,29 @@ export class QueryEngine implements IQueryEngine {
         }
     }
 
-    public async aggregate<T, R = any>(
-        data: T[],
-        pipeline: AggregationPipeline
-    ): Promise<R[]> {
-        // Validación de pipeline vacío
+    public async aggregate<T, R = any>(data: T[], pipeline: AggregationPipeline): Promise<R[]> {
         if (!pipeline || pipeline.length === 0) {
             return data as unknown as R[];
         }
 
+        // 🔥 CORRECCIÓN: Validamos el pipeline completo ANTES de empezar a procesar datos
+        this.validatePipeline(pipeline);
+
         let result: any[] = [...data];
 
-        // Ejecución secuencial (los pipelines de agregación son bloqueantes por orden)
         for (let i = 0; i < pipeline.length; i++) {
             const stage = pipeline[i];
             const operator = Object.keys(stage)[0];
             const config = stage[operator];
-
-            const handler = this.stageRegistry.get(operator);
-
-            if (!handler) {
-                throw new Error(`[QueryEngine] ❌ Operador "${operator}" no registrado en el engine.`);
-            }
+            const handler = this.stageRegistry.get(operator)!; // Ya validado arriba
 
             try {
-                // Ejecutamos la etapa
                 result = await handler.execute(result, config);
-
-                // Logging opcional para depuración (muy útil en producción)
-                // this.logger.debug(`Etapa ${i + 1}: ${operator} completada. Registros actuales: ${result.length}`);
             } catch (error: any) {
-                throw new Error(`[QueryEngine] ❌ Error en la etapa "${operator}" (índice ${i}): ${error.message}`);
+                throw new Error(`[QueryEngine] ❌ Error ejecutando etapa "${operator}": ${error.message}`);
             }
         }
 
         return result as R[];
     }
-
-
 }

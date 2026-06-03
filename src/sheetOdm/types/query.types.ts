@@ -10,6 +10,7 @@ export type Projection<T = any> = {
 
 export interface ISheetDriver {
     appendRow(sheetName: string, row: any[]): Promise<number>;
+    appendRows(sheetName: string, rows: any[][]): Promise<number[]>
     updateRow(sheetName: string, rowNumber: number, values: any[]): Promise<number>;
     getExistingSheetTitles(): Promise<string[]>;
     createSheet(title: string): Promise<any>;

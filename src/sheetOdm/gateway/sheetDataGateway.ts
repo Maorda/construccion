@@ -53,6 +53,40 @@ export class SheetDataGateway implements ISheetDriver {
             throw error;
         }
     }
+    async appendRows(sheetName: string, rows: any[][]): Promise<number[]> {
+        if (!rows || rows.length === 0) return [];
+        try {
+            const response = await this.auth.sheets.spreadsheets.values.append({
+                spreadsheetId: this.spreadsheetId,
+                range: `${sheetName}!A:A`,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { values: rows },
+            });
+
+            const updatedRange = response.data?.updates?.updatedRange; // Ej: "OBREROS!A15:O17" o "OBREROS!A15:O15"
+
+            if (updatedRange) {
+                const parts = updatedRange.split('!');
+                const rangePart = parts[1] || parts[0]; // "A15:O17"
+                const matches = rangePart.match(/\d+/g); // Extrae ["15", "17"]
+
+                if (matches) {
+                    const startRow = parseInt(matches[0], 10);
+                    const endRow = matches[1] ? parseInt(matches[1], 10) : startRow;
+
+                    const indices: number[] = [];
+                    for (let i = startRow; i <= endRow; i++) {
+                        indices.push(i);
+                    }
+                    return indices; // Retorna un array ordenado de filas físicas asignadas [15, 16, 17]
+                }
+            }
+            throw new Error(`No se pudo determinar el rango físico insertado en ${sheetName}`);
+        } catch (error: any) {
+            this.logger.error(`❌ Error en appendRows para ${sheetName}: ${error.message}`);
+            throw error;
+        }
+    }
 
     async getExistingSheetTitles(): Promise<string[]> {
         const res = await this.auth.sheets.spreadsheets.get({ spreadsheetId: this.spreadsheetId });
@@ -116,4 +150,42 @@ export class SheetDataGateway implements ISheetDriver {
         const index = columnMap[pkField];
         return rowData[index];
     }
+    async batchUpdateValues(data: { range: string; values: any[][] }[]): Promise<void> {
+        try {
+            if (data.length === 0) return;
+
+            await this.auth.sheets.spreadsheets.values.batchUpdate({
+                spreadsheetId: this.spreadsheetId,
+                requestBody: {
+                    valueInputOption: 'USER_ENTERED',
+                    data: data.map(item => ({
+                        range: item.range,
+                        values: item.values
+                    }))
+                }
+            });
+            this.logger.log(`[Gateway] ⚡ Batch Update completado con éxito. Rupturas de cuota evitadas.`);
+        } catch (error: any) {
+            this.logger.error(`Error en batchUpdateValues: ${error.message}`);
+            throw error;
+        }
+    }
+    /**
+     * 🔥 NUEVO: Limpia (borra celdas) de múltiples rangos/filas a la vez
+     */
+    async batchClearValues(ranges: string[]): Promise<void> {
+        try {
+            if (ranges.length === 0) return;
+
+            await this.auth.sheets.spreadsheets.values.batchClear({
+                spreadsheetId: this.spreadsheetId,
+                requestBody: { ranges }
+            });
+            this.logger.log(`[Gateway] 🧼 Batch Clear ejecutado para ${ranges.length} rangos.`);
+        } catch (error: any) {
+            this.logger.error(`Error en batchClearValues: ${error.message}`);
+            throw error;
+        }
+    }
+
 }
