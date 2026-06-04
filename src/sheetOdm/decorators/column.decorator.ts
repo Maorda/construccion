@@ -1,5 +1,5 @@
-import { SHEETS_COLUMN_DETAILS, SHEETS_COLUMN_LIST, SHEETS_DELETE_CONTROL } from '@sheetOdm/constants/metadata.constants';
 import 'reflect-metadata';
+import { SHEETS_COLUMN_DETAILS, SHEETS_COLUMN_LIST, SHEETS_DELETE_CONTROL } from '@sheetOdm/constants/metadata.constants'
 import { ColumnOptions } from './interfacesDecorators';
 export function Column(options: ColumnOptions = {}): PropertyDecorator {
     return (target: object, propertyKey: string | symbol) => {

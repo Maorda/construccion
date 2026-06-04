@@ -3,7 +3,7 @@ import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
 import { ModuleRef } from '@nestjs/core';
 import { SheetsRepository } from '@sheetOdm/repository/sheets.repository';
 import { getRepositoryToken } from '@sheetOdm/utils/helper';
-import { ClassType } from '@sheetOdm/types/query.types';
+import { ClassType, PopulateOptions } from '@sheetOdm/types/query.types';
 
 @Injectable()
 export class RelationManager {
@@ -18,14 +18,15 @@ export class RelationManager {
     async populate<T extends object>(
         entities: T[],
         entityClass: ClassType<T>,
+        populateOptions: PopulateOptions<T>[], // Cambiamos de opciones simples a array de configuración
         options?: { includeInactive?: boolean }
     ): Promise<T[]> {
-        if (!entities || entities.length === 0) return entities;
+        if (!entities || entities.length === 0 || populateOptions.length === 0) return entities;
 
-        const relationKeys = this.registry.getRelationsList(entityClass);
         const localPkField = this.registry.getPrimaryKeyField(entityClass);
 
-        for (const relKey of relationKeys) {
+        for (const popConfig of populateOptions) {
+            const relKey = popConfig.path as string;
             const relOptions = this.registry.getRelationOptions(entityClass, relKey);
             if (!relOptions) continue;
 
@@ -33,43 +34,30 @@ export class RelationManager {
             const childRepo = this.getRepositoryForEntity(targetEntityClass);
             const targetPkField = this.registry.getPrimaryKeyField(targetEntityClass);
 
-            let relatedData: any[] = [];
-
             if (relOptions.isMany) {
-                // 🔹 CASO A: Es un @SubCollection (1 a Muchos)
-                // La FK está viviendo en el documento hijo en Google Sheets.
+                // Caso A: @SubCollection
                 const joinColumn = relOptions.options?.joinColumn || `${entityClass.name.toLowerCase()}Id`;
-
                 const parentIds = entities.map(e => (e as any)[localPkField]).filter(Boolean);
-                if (parentIds.length === 0) continue;
 
-                // Consulta dirigida de alto rendimiento
-                relatedData = await childRepo.find(
-                    { [joinColumn]: { $in: parentIds } },
-                    { includeInactive: options?.includeInactive }
-                );
+                // Fusión del filtro del usuario (match) con el filtro de relación
+                const query = { ...popConfig.match, [joinColumn]: { $in: parentIds } };
 
-                // Asignación de arreglos vivos de Active Record
+                const relatedData = await childRepo.find(query, { includeInactive: options?.includeInactive });
+
                 for (const parent of entities) {
                     const parentId = (parent as any)[localPkField];
                     (parent as any)[relKey] = relatedData.filter(c => (c as any)[joinColumn] === parentId);
                 }
-
             } else {
-                // 🔸 CASO B: Es un @Reference (Muchos a 1 / 1 a 1)
-                // La FK vive en nuestra propia fila actual (gracias a tu inyección automática).
+                // Caso B: @Reference
                 const joinColumn = relOptions.joinColumn;
-
                 const targetIdsNeeded = entities.map(e => (e as any)[joinColumn]).filter(Boolean);
-                if (targetIdsNeeded.length === 0) continue;
 
-                // Buscamos los padres requeridos por su Clave Primaria directa
-                relatedData = await childRepo.find(
-                    { [targetPkField]: { $in: targetIdsNeeded } },
-                    { includeInactive: options?.includeInactive }
-                );
+                // CORRECCIÓN: Usamos targetIdsNeeded, no parentIds
+                const query = { ...popConfig.match, [targetPkField]: { $in: targetIdsNeeded } };
 
-                // Asignación de un único objeto o null
+                const relatedData = await childRepo.find(query, { includeInactive: options?.includeInactive });
+
                 for (const current of entities) {
                     const foreignKeyValue = (current as any)[joinColumn];
                     (current as any)[relKey] = relatedData.find(p => (p as any)[targetPkField] === foreignKeyValue) || null;

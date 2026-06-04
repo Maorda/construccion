@@ -113,3 +113,41 @@ export interface UpdateOptions {
     upsert?: boolean;
     new?: boolean; // true para retornar el documento actualizado, false para el anterior
 }
+export type RelationKeys<T> = {
+    [K in keyof T]-?: NonNullable<T[K]> extends string | number | boolean | Date | Function
+    ? never
+    : K extends string
+    ? K
+    : never;
+}[keyof T];
+
+export type Unpacked<T> = T extends (infer U)[] ? U : T;
+
+// Interfaz de configuración del Populate
+export interface PopulateOptions<T, K extends RelationKeys<T> = RelationKeys<T>> {
+    /** * El nombre de la propiedad relacionada. 
+     * Restringido a las llaves válidas de la entidad T.
+     */
+    path: K;
+
+    /** * Filtros específicos a aplicar en la consulta hija. 
+     * Hereda tu actual FilterQuery, pero tipado dinámicamente hacia la entidad destino.
+     */
+    match?: FilterQuery<Unpacked<T[K]>>;
+
+    /** * Seleccionar solo ciertas columnas (proyección) para optimizar memoria.
+     */
+    select?: Array<keyof Unpacked<T[K]>>;
+
+    /** * Límite de registros a traer (muy útil para @SubCollection)
+     */
+    limit?: number;
+
+    /**
+     * Ordenamiento de los resultados hijos
+     */
+    sort?: Record<keyof Unpacked<T[K]>, 1 | -1 | 'ASC' | 'DESC'>;
+}
+
+// Un tipo auxiliar para aceptar tanto el string directo como el objeto de configuración
+export type PopulateDefinition<T> = RelationKeys<T> | PopulateOptions<T>;

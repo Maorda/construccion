@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
 
-import { ClassType, FilterQuery, FindOneAndUpdateOptions, QueryOptions, UpdateQuery } from '@sheetOdm/types/query.types';
+import { ClassType, FilterQuery, FindOneAndUpdateOptions, PopulateOptions, QueryOptions, UpdateQuery } from '@sheetOdm/types/query.types';
 import { ROW_INDEX_SYMBOL, SHEETS_REPOSITORY_MARKER, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants';
 import * as Joi from 'joi';
 import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
@@ -149,7 +149,7 @@ export class SheetsRepository<T extends object> {
             return await this.insertDocument(doc);
         }
         return await this.updateDocument(doc, rowNumber);
-    }
+    };
 
     async update(filter: FilterQuery<T>, updateData: Partial<T>): Promise<SheetDocument<T> | null> {
         const doc = await this.findOne(filter);
@@ -231,7 +231,10 @@ export class SheetsRepository<T extends object> {
     // =========================================================================
 
     async populate(entity: T, relationField: string): Promise<T> {
-        await this.relationManager.populate([entity], this.entityClass);
+        const options: PopulateOptions<T> = {
+            path: relationField as any
+        };
+        await this.relationManager.populate([entity], this.entityClass, [options]);
         return entity;
     }
 
@@ -593,6 +596,23 @@ export class SheetsRepository<T extends object> {
         if (operations.length > 0) {
             await this.invalidateCache();
         }
+    }
+    public getRelationManager(): RelationManager {
+        return this.relationManager;
+    }
+    public async executeBaseFind(filter?: FilterQuery<T>, options?: QueryOptions<T>): Promise<SheetDocument<T>[]> {
+        const rawItems = await this.fetchRawData(options?.includeInactive);
+        const processedItems = await this.queryEngine.execute(rawItems, filter, options);
+
+        return processedItems.map(raw => {
+            const pk = raw[this.getPrimaryKeyField()];
+            let doc = this.unitOfWork.get(pk, this.entityClass);
+            if (!doc) {
+                doc = this.hydrator.hydrateAndShield(this.entityClass, this, raw);
+                if (pk) this.unitOfWork.register(doc, pk, this.entityClass);
+            }
+            return doc;
+        });
     }
 
 
