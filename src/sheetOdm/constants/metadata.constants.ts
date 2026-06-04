@@ -30,3 +30,9 @@ export const SHEETS_DTO = Symbol('sheets:dto');
 export const ROW_INDEX_SYMBOL = Symbol('__row');
 export const SHEETS_VIRTUAL_COLUMNS = Symbol('SHEETS_VIRTUAL_COLUMNS');
 export const SHEETS_VERSION_FIELD = Symbol('sheets:version_field');
+export const SHEETS_HOOKS = Symbol('sheets:hooks');
+
+export enum HookType {
+    PRE_SAVE = 'preSave',
+    POST_SAVE = 'postSave'
+}

@@ -20,7 +20,7 @@ import { AggregationEngine } from '@sheetOdm/engines/dependientesnivel1/aggregat
 import { RelationManager } from '@sheetOdm/services/relation-manager.service';
 import { DataMapper } from '@sheetOdm/services/data-mapper.service';
 import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
-import { SheetsRepositoryBuilder } from '@sheetOdm/repository/SheetsRepositoryBuilder';
+
 import { TransformationEngine } from '@sheetOdm/engines/TransformationEngine';
 import { ValidationEngine } from '@sheetOdm/engines/ValidationEngine';
 import { HydrationEngine } from '@sheetOdm/engines/HydrationEngine';
@@ -156,38 +156,12 @@ export class OdmSheetModule {
                 // 1. EL REPOSITORIO DE LA ENTIDAD
                 {
                     provide: REPO_TOKEN,
-                    useFactory: (
-                        metadataRegistry: MetadataRegistry,
-                        queryEngine: QueryEngine,
-                        gateway: SheetDataGateway,
-                        relationManager: RelationManager,
-                        dataMapper: DataMapper,
-                        moduleRef: ModuleRef,
-                        hydrator: SheetDocumentHydrator,
-                        unitOfWork: UnitOfWork
-                    ) => {
-                        return SheetsRepositoryBuilder.build(
-                            Entity,
-                            metadataRegistry,
-                            queryEngine,
-                            gateway,
-                            relationManager,
-                            dataMapper,
-                            moduleRef,
-                            hydrator,
-                            unitOfWork
-                        );
+                    useFactory: (factory: SheetsRepositoryFactory) => {
+                        // Ahora solo pasamos el Entity (la fábrica resuelve lo demás)
+                        return factory.create(Entity);
                     },
-                    inject: [
-                        MetadataRegistry,
-                        QueryEngine,
-                        SheetDataGateway,
-                        RelationManager,
-                        DataMapper,
-                        ModuleRef,
-                        SheetDocumentHydrator,
-                        UnitOfWork
-                    ],
+
+                    inject: [SheetsRepositoryFactory],
                 },
 
                 // 2. EL MODELO DINÁMICO (ACTIVE RECORD CAPABILITIES)

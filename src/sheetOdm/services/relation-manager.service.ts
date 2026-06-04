@@ -116,4 +116,8 @@ export class RelationManager {
 
         return repo;
     }
+    async resolveRepository<T extends object>(entityClass: ClassType<T>, moduleRef: ModuleRef): Promise<SheetsRepository<T>> {
+        const repoToken = getRepositoryToken(entityClass);
+        return moduleRef.get<SheetsRepository<T>>(repoToken, { strict: false });
+    }
 }
