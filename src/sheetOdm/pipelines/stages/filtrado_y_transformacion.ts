@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { IQueryStage } from "./IqueryStages";
-import { ExpressionEngine } from "@sheetOdm/engines/independientes/expression.engine";
+import { ExpressionEngine } from "@sheetOdm/pipelines/expression.engine";
 import { StageUtils } from "./StageUtils";
 import { ROW_INDEX_SYMBOL } from "@sheetOdm/constants/metadata.constants";
 

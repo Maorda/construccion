@@ -1,7 +1,7 @@
 import { Logger, Injectable } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
 import { LookupConfig } from "@sheetOdm/pipelines/types";
-import { ExpressionEngine } from "../independientes/expression.engine";
+import { ExpressionEngine } from "../../pipelines/expression.engine";
 import { MetadataRegistry } from "@sheetOdm/services/metadata-registry.service";
 
 @Injectable()

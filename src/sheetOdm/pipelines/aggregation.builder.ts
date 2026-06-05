@@ -3,14 +3,15 @@ import { Injectable } from "@nestjs/common";
 import { GroupConfig, LookupConfig } from "./types";
 import { QueryEngine } from "@sheetOdm/engines/query.engine";
 import { PipelineStage } from "@sheetOdm/types/query.types";
+import { PipelineOrchestrator } from "./pipeline.registry";
 
 
 @Injectable()
-export class QueryBuilder {
+export class AggregationBuilder {
     private pipeline: PipelineStage[] = [];
 
     constructor(
-        private readonly engine: QueryEngine // Tu motor actual como motor de ejecución
+        private readonly pipelineOrchestrator: PipelineOrchestrator
     ) { }
 
     match(criteria: Record<string, any>): this {
@@ -65,6 +66,6 @@ export class QueryBuilder {
     }
 
     async execute(data: any[]): Promise<any[]> {
-        return await this.engine.aggregate(data, this.pipeline as any); // "as any" como último recurso
+        return await this.pipelineOrchestrator.executePipeline(data, this.pipeline as any);
     }
 }

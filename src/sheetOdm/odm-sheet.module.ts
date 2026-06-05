@@ -25,7 +25,7 @@ import { TransformationEngine } from '@sheetOdm/engines/TransformationEngine';
 import { ValidationEngine } from '@sheetOdm/engines/ValidationEngine';
 import { HydrationEngine } from '@sheetOdm/engines/HydrationEngine';
 import { QueryEngine } from '@sheetOdm/engines/query.engine';
-import { ExpressionEngine } from '@sheetOdm/engines/independientes/expression.engine';
+import { ExpressionEngine } from '@sheetOdm/pipelines/expression.engine';
 
 // Pipeline Stages (Agregaciones)
 import { PipelineOrchestrator } from '@sheetOdm/pipelines/pipeline.registry';

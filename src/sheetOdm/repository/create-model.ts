@@ -31,88 +31,67 @@ export function createModel<T extends object>(
     repo: SheetsRepository<T>,
     relationEngine?: RelationEngine
 ): Model<T> {
+    // 1. Definimos la clase que servirá de contenedor (instancias)
+    class ModelClass {
+        constructor(data: Partial<T> = {}) {
+            const _data = { ...data };
+            const _modifiedPaths = new Set<string>();
+            let _isNew = (_data as any)[ROW_INDEX_SYMBOL] === undefined;
+            let _version = (_data as any).version || 0;
 
-    // 1. Creación de la Clase Dinámica que une Documento + Repositorio
-    const ModelClass = class extends SheetDocument<T> {
-        constructor(data?: Partial<T>) {
-            const dataObj = (data || {}) as Partial<T>;
-            const rowNumber = (dataObj as any)[ROW_INDEX_SYMBOL];
-            const version = (dataObj as any).version || 0;
-            const isNew = rowNumber === undefined;
+            const instance = Object.assign(Object.create(entityClass.prototype), _data);
 
-            // Invocamos a SheetDocument SIN el repo
-            super(dataObj, repo, isNew, entityClass, rowNumber, version);
+            const proxy = new Proxy(instance, {
+                get(target, prop, receiver) {
+                    if (prop === '_data') return _data;
+                    if (prop === '_isNew') return _isNew;
+                    return Reflect.get(target, prop, receiver);
+                },
+                set(target, prop, value, receiver) {
+                    if (target[prop] !== value) {
+                        _modifiedPaths.add(prop as string);
+                        _data[prop as keyof T] = value;
+                    }
+                    return Reflect.set(target, prop, value, receiver);
+                }
+            });
 
-            try {
-                (this as any)._snapshot = isNew ? {} : deepClone(dataObj);
-            } catch (e) {
-                (this as any)._snapshot = dataObj;
-            }
+            // Definimos el método save en la instancia (capacidad Active Record)
+            Object.defineProperty(proxy, 'save', {
+                value: async function () {
+                    const saved = await repo.save(proxy as any);
+                    Object.assign(_data, saved);
+                    return proxy;
+                },
+                enumerable: false
+            });
+
+            return proxy;
         }
 
-        // --- IMPLEMENTACIÓN DE LOS CONTRATOS DE ACTIVE RECORD ---
-
-        async save(): Promise<this> {
-            if (!this.isDirty && !this.isNew) return this;
-
-            // Usamos el 'repo' atrapado en el closure del factory
-            const savedDoc = await repo.save(this as any);
-
-            // Sincronizamos el estado interno con lo devuelto por la DB
-            Object.assign(this._data, savedDoc.toObject());
-            if (savedDoc[ROW_INDEX_SYMBOL] !== undefined) {
-                this.markAsSaved(savedDoc[ROW_INDEX_SYMBOL]!);
-            }
-            this.setVersion(savedDoc.version);
-
-            return this;
+        // 2. Implementamos los métodos estáticos del contrato Model<T>
+        static async save(data: Partial<T>): Promise<T & SheetDocument<T>> {
+            const instance = new ModelClass(data);
+            return (instance as any).save();
         }
 
-        async remove(): Promise<boolean> {
-            return await repo.delete(this as any);
+        static async find(filter?: any, options?: any) {
+            return await repo.find(filter, options);
         }
 
-        async populate(path: string): Promise<this> {
-            if (!relationEngine) {
-                throw new Error(`[SheetODM] RelationEngine no fue provisto al crear el modelo de ${entityClass.name}.`);
-            }
-            // Asumiendo que repo provee una forma de obtener otros repos, o inyectas el provider en createModel
-            const repoProvider = (targetClass: ClassType<any>) => null; // Ajusta esto según cómo resuelvas repositorios globalmente
-
-            await relationEngine.populateDeep(this, path, repoProvider);
-            return this;
+        static async findOne(filter?: any, options?: any) {
+            return await repo.findOne(filter, options);
         }
-    };
 
-    // 2. Vinculación Dinámica de Metadatos
-    const metadataKeys = [
-        SHEETS_COLUMN_DETAILS, SHEETS_COLUMN_LIST, SHEETS_TABLE_NAME,
-        SHEETS_PRIMARY_KEY, SHEETS_DELETE_CONTROL, SHEETS_VERSION_FIELD
-    ];
+        static async findOneAndUpdate(filter: any, update: any, options?: any) {
+            return await repo.findOneAndUpdate(filter, update, options);
+        }
 
-    metadataKeys.forEach(key => {
-        const value = Reflect.getMetadata(key, entityClass.prototype);
-        if (value) Reflect.defineMetadata(key, value, ModelClass.prototype);
-    });
+        static async aggregate<R = any>(pipeline: any[]): Promise<R[]> {
+            return await repo.aggregate(pipeline);
+        }
+    }
 
-    // 3. Métodos Estáticos del Modelo
-    const staticModel = ModelClass as any;
-
-    staticModel.find = (filter?: FilterQuery<T>, options?: QueryOptions<T>) =>
-        repo.find(filter, { ...options, customConstructor: ModelClass } as any);
-
-    staticModel.findOne = (filter?: FilterQuery<T>, options?: QueryOptions<T>) =>
-        repo.findOne(filter, { ...options, customConstructor: ModelClass } as any);
-
-    staticModel.findOneAndUpdate = (filter: FilterQuery<T>, update: any, options?: any) =>
-        (repo as any).findOneAndUpdate(filter, update, { ...options, customConstructor: ModelClass });
-
-    staticModel.aggregate = (pipeline: any[]) => repo.aggregate(pipeline);
-
-    staticModel.save = async (data: Partial<T>) => {
-        const instance = new ModelClass(data);
-        return await instance.save();
-    };
-
+    // Retornamos como Model<T> para que TS valide el contrato
     return ModelClass as unknown as Model<T>;
 }

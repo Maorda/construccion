@@ -1,15 +1,18 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { randomUUID } from "crypto";
 import { SheetsRepository } from "@sheetOdm/repository/sheets.repository";
-import { ClassType } from "@sheetOdm/types/query.types";
-import { ROW_INDEX_SYMBOL, SHEETS_COLUMN_DETAILS } from '@sheetOdm/constants/metadata.constants';
-import { randomUUID } from "crypto"; // 🔥 Generador nativo de Node.js
-import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument";
 import { MetadataRegistry } from "@sheetOdm/services/metadata-registry.service";
+import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument";
+import { ClassType } from "@sheetOdm/types/query.types";
+import {
+    ROW_INDEX_SYMBOL,
+    SHEETS_COLUMN_DETAILS
+} from '@sheetOdm/constants/metadata.constants';
+import { SheetDataTransformer } from "./sheetDataTransformer";
 
 export interface HydratorOptions<T extends object, U extends SheetDocument<T>> {
     new?: boolean;
     oldDataFlat?: any;
-    // Ajusta esta firma para que coincida exactamente con tu constructor de SheetDocument
     customConstructor?: new (
         data: T,
         repo: SheetsRepository<T>,
@@ -20,103 +23,90 @@ export interface HydratorOptions<T extends object, U extends SheetDocument<T>> {
     ) => U;
 }
 
-export interface ISheetDocumentHydrator {
-    // Definimos U como un genérico opcional que por defecto es SheetDocument<T>
-    hydrateAndShield<T extends object, U extends SheetDocument<T> = SheetDocument<T>>(
-        entityClass: ClassType<T>,
-        repository: SheetsRepository<T>,
-        rawData: any,
-        // Ahora pasamos los tipos correspondientes
-        options?: HydratorOptions<T, U>
-    ): U | null; // El retorno cambia de SheetDocument<T> a U para preservar el tipo exacto
-}
-
 @Injectable()
 export class SheetDocumentHydrator {
     private readonly logger = new Logger(SheetDocumentHydrator.name);
+
     constructor(
         private readonly metadataRegistry: MetadataRegistry,
+        private readonly transformer: SheetDataTransformer
     ) { }
 
     public hydrateAndShield<T extends object, U extends SheetDocument<T> = SheetDocument<T>>(
         entityClass: ClassType<T>,
         repository: SheetsRepository<T>,
         rawData: any,
-        options: HydratorOptions<T, U> = {} // Ahora acepta los tipos
+        options: HydratorOptions<T, U> = {}
     ): U {
-        if (!rawData) return null;
+        if (!rawData) {
+            throw new Error(`[Hydrator] No se pueden hidratar datos nulos para ${entityClass.name}`);
+        }
 
         try {
-            // 1. Determinar fuente de datos real
+            // 1. Determinar fuente de datos
             const dataToProcess = (options.new === false && options.oldDataFlat)
                 ? options.oldDataFlat
                 : rawData;
 
-            // 2. 🌟 DETECCIÓN DINÁMICA DE NOVEDAD usando el Symbol
             const isNewDoc = options.new !== undefined
                 ? options.new
                 : (dataToProcess[ROW_INDEX_SYMBOL] === undefined);
 
-            // 3. Extraer metadatos de las columnas de la entidad
+            // 2. Extraer metadatos
             const targetPrototype = entityClass.prototype;
             const details = Reflect.getMetadata(SHEETS_COLUMN_DETAILS, targetPrototype) || {};
 
-            // 4. Instanciar la entidad base
-            const instance = new entityClass();
-            Object.assign(instance, dataToProcess);
+            // 3. 🌟 PROCESO DE TRANSFORMACIÓN (Casteo de tipos centralizado)
+            // Aquí consumimos nuestro Transformer en lugar de tener lógica dispersa
+            const processedData = { ...dataToProcess };
+            for (const key in details) {
+                const config = details[key];
+                if (config && config.type) {
+                    processedData[key] = this.transformer.castValue(
+                        dataToProcess[key],
+                        config.type
+                    );
+                }
+            }
 
-            // 🛡️ BLINDAJE ANTI-PÉRDIDA: Object.assign omite Symbols si no son enumerables. 
-            // Forzamos el traspaso manual del puntero de fila física a la instancia base.
+            // 4. Instanciar y asignar datos limpios
+            const instance = new entityClass();
+            Object.assign(instance, processedData);
+
+            // Preservar puntero de fila
             if (dataToProcess[ROW_INDEX_SYMBOL] !== undefined) {
                 (instance as any)[ROW_INDEX_SYMBOL] = dataToProcess[ROW_INDEX_SYMBOL];
             }
 
-            // 5. 🔑 AUTO-GENERACIÓN DE UUID
+            // 5. 🔑 AUTO-GENERACIÓN (Solo si es documento nuevo)
             if (isNewDoc) {
                 for (const [propName, config] of Object.entries(details)) {
-                    if ((config as any)?.generated === 'uuid' && !instance[propName as keyof typeof instance]) {
+                    if ((config as any)?.generated === 'uuid' && !instance[propName as keyof T]) {
                         (instance as any)[propName] = randomUUID();
                     }
                 }
             }
 
-            // 6. 🔄 INSTANCIACIÓN VIRTUAL PROTOTÍPICA (Estilo Mongoose)
-            // Si viene un constructor personalizado (el Modelo dinámico), lo instanciamos directamente.
-            // De lo contrario, cae en el wrapper estándar SheetDocument.
+            // 6. 🔄 INSTANCIACIÓN DEL WRAPPER
             const DynamicModel = options.customConstructor || class extends SheetDocument<T> {
-                async save(): Promise<this> {
-                    // Delegamos al repositorio que ya tenemos en scope gracias al cierre (closure)
-                    const saved = await repository.save(this);
-                    return saved as this;
-                }
-                async remove(): Promise<boolean> {
-                    return await repository.delete(this);
-                }
-                async populate(path: string): Promise<this> {
-                    // Implementación de carga de relaciones si fuera necesaria
-                    return this;
-                }
+                async save(): Promise<this> { return (await repository.save(this)) as this; }
+                async remove(): Promise<boolean> { return await repository.delete(this); }
+                async populate(path: string): Promise<this> { return this; }
             };
+
             const hydratedDoc = new DynamicModel(
                 instance as T,
                 repository,
                 isNewDoc,
                 entityClass
             ) as U;
+
             (hydratedDoc as any)._entityClass = entityClass;
 
-            // Aseguramos que el documento vivo también mantenga el símbolo operacional de la fila
-            if ((instance as any)[ROW_INDEX_SYMBOL] !== undefined) {
-                (hydratedDoc as any)[ROW_INDEX_SYMBOL] = (instance as any)[ROW_INDEX_SYMBOL];
-            }
-
-            // 7. 📈 VINCULACIÓN DINÁMICA DE VIRTUAL GETTERS
+            // 7. 📈 VIRTUAL GETTERS (Binding)
             const descriptors = Object.getOwnPropertyDescriptors(targetPrototype);
-            const virtualKeys: string[] = [];
-
             for (const [key, descriptor] of Object.entries(descriptors)) {
                 if (descriptor.get && key !== 'constructor') {
-                    virtualKeys.push(key);
                     Object.defineProperty(hydratedDoc, key, {
                         get: descriptor.get.bind(hydratedDoc),
                         enumerable: true,
@@ -125,35 +115,21 @@ export class SheetDocumentHydrator {
                 }
             }
 
-            // 8. 🛡️ BYPASS TRANSACCIONAL ANTI-VACIADO
-            if (!hydratedDoc || (Object.keys(hydratedDoc).length === 0 && !(hydratedDoc instanceof SheetDocument))) {
-                this.logger.error(`[Hydrator] ❌ Error catastrófico: No se pudo generar una instancia válida de SheetDocument.`);
-                throw new Error(`Instanciación fallida para la entidad ${entityClass.name}`);
-            }
-
-            // 9. 🛡️ SERIALIZADOR TOTAL (Columnas + Virtuals + Control de fila)
+            // 8. 🛡️ SERIALIZADOR TOTAL (toJSON)
             Object.defineProperty(hydratedDoc, 'toJSON', {
                 value: function () {
                     const plainObject = {} as any;
-
-                    // Mapear columnas reales
-                    const columns = Object.keys(details);
-                    for (const col of columns) {
+                    for (const col of Object.keys(details)) {
                         plainObject[col] = this[col] !== undefined ? this[col] : null;
                     }
-
-                    // Mapear Virtuals
-                    for (const virtualKey of virtualKeys) {
-                        plainObject[virtualKey] = this[virtualKey];
+                    // Incluir virtuals definidos en el prototype
+                    for (const key of Object.keys(descriptors)) {
+                        if (descriptors[key].get && key !== 'constructor') {
+                            plainObject[key] = this[key];
+                        }
                     }
-
-                    // Adjuntar fila física operacional usando el Symbol para lectura, 
-                    // pero manteniendo el nombre '__row' en el JSON resultante para compatibilidad.
                     const rowIndex = this[ROW_INDEX_SYMBOL];
-                    if (rowIndex !== undefined) {
-                        plainObject.__row = rowIndex;
-                    }
-
+                    if (rowIndex !== undefined) plainObject.__row = rowIndex;
                     return plainObject;
                 },
                 enumerable: false,
@@ -163,8 +139,7 @@ export class SheetDocumentHydrator {
             return hydratedDoc as U;
 
         } catch (error: any) {
-            // Log enriquecido para facilitar la depuración en producción
-            this.logger.error(`[Hydrator] ❌ Error crítico hidratando la entidad "${entityClass.name}": ${error.message}`);
+            this.logger.error(`[Hydrator] ❌ Error crítico hidratando "${entityClass.name}": ${error.message}`);
             throw error;
         }
     }

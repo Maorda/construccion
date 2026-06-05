@@ -102,6 +102,8 @@ export type UpdateQuery<T> = {
     $set?: Partial<T>;
     $inc?: Partial<Record<keyof T, number>>; // Para contadores
     $push?: Record<string, any>;
+    $pull?: Record<string, any>;
+    $unset?: Record<string, any>;
 };
 
 /**
