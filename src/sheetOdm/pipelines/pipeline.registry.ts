@@ -8,31 +8,48 @@ export class PipelineOrchestrator {
     private readonly stagesMap: Map<string, IQueryStage> = new Map();
 
     constructor(@Inject(PIPELINE_STAGE) private readonly stages: IQueryStage[]) {
-        // Mapeo automático basado en el nombre de la clase
+        // Mapeo automático inteligente basado en el nombre de la clase
         this.stages.forEach(stage => {
-            const operator = `$${stage.constructor.name.replace('Stage', '').toLowerCase()}`;
+            const className = stage.constructor.name;
+            const stageName = className.replace('Stage', '');
+
+            // 🟢 SOLUCIÓN AL BUG: Convierte solo la primera letra a minúscula para soportar camelCase
+            // Ejemplo: "AddFieldsStage" -> "AddFields" -> "$addFields"
+            const operator = `$${stageName.charAt(0).toLowerCase()}${stageName.slice(1)}`;
+
             this.stagesMap.set(operator, stage);
+
+            // Log de depuración para asegurar que los multi-providers se carguen correctamente en tu NPM library
+            this.logger.log(`[PipelineOrchestrator] Stage registrado: ${operator} -> ${className}`);
         });
     }
 
     public async executePipeline(data: any[], pipeline: Record<string, any>[]): Promise<any[]> {
-        let result = data;
+        // 🟢 BUENA PRÁCTICA: Clonamos superficialmente el array inicial para evitar mutaciones directas
+        // por referencia en los datos crudos de origen.
+        let result = [...data];
 
         for (const stageConfig of pipeline) {
+            if (!stageConfig || typeof stageConfig !== 'object') continue;
+
             const operator = Object.keys(stageConfig)[0];
             const config = stageConfig[operator];
             const stage = this.stagesMap.get(operator);
 
             if (!stage) {
-                this.logger.warn(`Stage no soportado: ${operator}`);
+                this.logger.warn(`Stage no soportado u olvidado en la inyección del módulo: ${operator}`);
                 continue;
             }
 
             try {
+                // 1. Ejecuta las validaciones de negocio e integridad estructuradas de cada Stage
                 stage.validate(config);
+
+                // 2. Ejecuta la lógica aislada del Stage (soporta tanto promesas asíncronas como arrays puros)
                 result = await stage.execute(result, config);
             } catch (error) {
-                this.logger.error(`Error en el stage ${operator}: ${error.message}`);
+                this.logger.error(`Error crítico en la ejecución del stage ${operator}: ${error.message}`);
+                // Relanzamos el error para que rompa el flujo y no devuelva datos corruptos o incompletos
                 throw error;
             }
         }

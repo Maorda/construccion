@@ -16,14 +16,14 @@ import { UnitOfWork } from '@sheetOdm/services/UnitOfWork';
 // Motores de Datos, Hidratación y Relaciones
 import { SheetsRepositoryFactory } from '@sheetOdm/repository/sheets-repository.factory';
 import { ProjectionService } from '@sheetOdm/engines/projection.service';
-import { AggregationEngine } from '@sheetOdm/engines/dependientesnivel1/aggregation.engine';
+
 import { RelationManager } from '@sheetOdm/services/relation-manager.service';
 import { DataMapper } from '@sheetOdm/services/data-mapper.service';
 import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
 
 import { TransformationEngine } from '@sheetOdm/engines/TransformationEngine';
 import { ValidationEngine } from '@sheetOdm/engines/ValidationEngine';
-import { HydrationEngine } from '@sheetOdm/engines/HydrationEngine';
+
 import { QueryEngine } from '@sheetOdm/engines/query.engine';
 import { ExpressionEngine } from '@sheetOdm/pipelines/expression.engine';
 
@@ -37,33 +37,71 @@ import { LimitStage, SkipStage, SortStage } from '@sheetOdm/pipelines/stages/ord
 import { ClassType } from '@sheetOdm/types/query.types';
 import { DatabaseModuleOptions, DatabaseModuleAsyncOptions, GoogleDriveConfig } from '@sheetOdm/interfaces/database.options.interface';
 import { createModel } from '@sheetOdm/repository/create-model';
+import { AggregationBuilder } from './pipelines/aggregation.builder';
+import { DATA_TRANSFORM_OPERATOR, FILTER_OPERATOR, PIPELINE_STAGE } from './pipelines/pipeline.constants';
+import { EqOperator, NeOperator, GtOperator, GteOperator, LtOperator, LteOperator, InOperator, NinOperator, ExistsOperator, RegexOperator } from './pipelines/operadores/filter.operators';
+import { IfOperator, MultiplyOperator, IncOperator, MinMaxOperator, RoundOperator, MathOperator, UpperOperator, TrimOperator, ConcatOperator, DateAddOperator, TimeDiffOperator, AggregateOperator } from './pipelines/operadores/transform.operators';
 
 // =========================================================================
 // UTILIDADES DE TOKENS (Exportar de manera pública en tu librería)
 // =========================================================================
-export const getModelToken = (entity: Function | string): string =>
+export const getModelToken = (entity: ClassType | string): string =>
     typeof entity === 'string' ? `${entity}Model` : `${entity.name}Model`;
 
-export const getRepositoryToken = (entity: Function | string): string =>
+export const getRepositoryToken = (entity: ClassType | string): string =>
     typeof entity === 'string' ? `${entity}Repository` : `${entity.name}Repository`;
 
-export const InjectModel = (entity: Function) => Inject(getModelToken(entity));
-export const InjectRepository = (entity: Function) => Inject(getRepositoryToken(entity));
+export const InjectModel = (entity: ClassType) => Inject(getModelToken(entity));
+export const InjectRepository = (entity: ClassType) => Inject(getRepositoryToken(entity));
 
 // =========================================================================
 // LISTA DE PROVEEDORES DEL CORE LOGICIAL
 // =========================================================================
 const CORE_PROVIDERS: Provider[] = [
+    // 🟢 EL NUEVO CORAZÓN DE LAS CONSULTAS
+    AggregationBuilder,
     PipelineOrchestrator,
-    MatchStage,
-    ProjectStage,
-    LookupStage,
-    SortStage,
-    GroupStage,
-    UnwindStage,
-    AddFieldsStage,
-    LimitStage,
-    SkipStage,
+    ExpressionEngine,
+
+    // 🟢 REFACTORIZACIÓN MULTI-PROVIDER STAGES:
+    // Conectamos cada clase al token PIPELINE_STAGE que el orquestador exige vía @Inject
+    // 2. Operadores de Filtro (Multi-Provider)
+    { provide: FILTER_OPERATOR, useClass: EqOperator },
+    { provide: FILTER_OPERATOR, useClass: NeOperator },
+    { provide: FILTER_OPERATOR, useClass: GtOperator },
+    { provide: FILTER_OPERATOR, useClass: GteOperator },
+    { provide: FILTER_OPERATOR, useClass: LtOperator },
+    { provide: FILTER_OPERATOR, useClass: LteOperator },
+    { provide: FILTER_OPERATOR, useClass: InOperator },
+    { provide: FILTER_OPERATOR, useClass: NinOperator },
+    { provide: FILTER_OPERATOR, useClass: ExistsOperator },
+    { provide: FILTER_OPERATOR, useClass: RegexOperator },
+
+    // 3. Operadores de Transformación (Multi-Provider)
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: IfOperator },
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: MultiplyOperator },
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: IncOperator },
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: MinMaxOperator },
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: RoundOperator },
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: MathOperator },
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: UpperOperator },
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: TrimOperator },
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: ConcatOperator },
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: DateAddOperator },
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: TimeDiffOperator },
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: AggregateOperator },
+
+    // 4. Pipeline Stages (Multi-Provider)
+    { provide: PIPELINE_STAGE, useClass: MatchStage },
+    { provide: PIPELINE_STAGE, useClass: SortStage },
+    { provide: PIPELINE_STAGE, useClass: AddFieldsStage },
+    { provide: PIPELINE_STAGE, useClass: GroupStage },
+    { provide: PIPELINE_STAGE, useClass: LimitStage },
+    { provide: PIPELINE_STAGE, useClass: LookupStage },
+    { provide: PIPELINE_STAGE, useClass: ProjectStage },
+    { provide: PIPELINE_STAGE, useClass: SkipStage },
+    { provide: PIPELINE_STAGE, useClass: UnwindStage },
+
     GoogleAutenticarService,
     GoogleHealthService,
     DatabaseConfigService,
@@ -72,7 +110,6 @@ const CORE_PROVIDERS: Provider[] = [
     SheetsRepositoryFactory,
     ProjectionService,
     QueryEngine,
-    AggregationEngine,
     ExpressionEngine,
     InfrastructureProvisioner,
     SheetDataGateway,
@@ -82,7 +119,7 @@ const CORE_PROVIDERS: Provider[] = [
     UnitOfWork,
     TransformationEngine,
     ValidationEngine,
-    HydrationEngine,
+    //HydrationEngine,
 ];
 
 @Global()

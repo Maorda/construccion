@@ -1,63 +1,74 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { IQueryStage } from "./IqueryStages";
 import { GroupAccumulator, GroupConfig, LookupConfig } from "../types";
 import { StageUtils } from "./StageUtils";
 import { RelationEngine } from "@sheetOdm/engines/relationEngine";
+import { ModuleRef } from "@nestjs/core";
+import { MetadataRegistry } from "@sheetOdm/services/metadata-registry.service";
+import { ExpressionEngine } from "../expression.engine";
 
 
 @Injectable()
 export class GroupStage implements IQueryStage {
-    async execute(data: any[], config: GroupConfig): Promise<any[]> {
-        const groups = new Map<string, any[]>();
-
-        for (const item of data) {
-            const targetField = config._id === null ? 'null' : config._id.replace('$', '');
-            const key = String(config._id === null ? 'null' : (item[targetField] ?? 'null'));
-
-            if (!groups.has(key)) groups.set(key, []);
-            groups.get(key)!.push(item);
-        }
-
-        const result: any[] = [];
-        for (const [key, items] of groups) {
-            const groupResult: any = { _id: key === 'null' ? null : key };
-
-            for (const [fieldName, accumulator] of Object.entries(config)) {
-                if (fieldName === '_id') continue;
-                groupResult[fieldName] = this.applyAccumulator(accumulator as GroupAccumulator, items);
-            }
-            result.push(groupResult);
-        }
-        return result;
-    }
+    constructor(private readonly expressionEngine: ExpressionEngine) { }
 
     validate(config: any): void {
-        StageUtils.validateObject(config, '$group');
-
-        if (!('_id' in config)) {
-            throw new Error("[$group] requiere definir un campo '_id'.");
-        }
-
-        const validAccumulators = ['$sum', '$avg', '$min', '$max', '$count', '$push'];
-
-        for (const [key, accumulator] of Object.entries(config)) {
-            if (key === '_id') continue;
-
-            if (typeof accumulator !== 'object' || accumulator === null) {
-                throw new Error(`[$group] El acumulador '${key}' debe ser un objeto.`);
-            }
-
-            const operator = Object.keys(accumulator as any)[0];
-            if (!validAccumulators.includes(operator)) {
-                throw new Error(`[$group] Operador '${operator}' no soportado en el acumulador '${key}'.`);
-            }
-
-            const target = (accumulator as any)[operator];
-            if (operator !== '$count' && typeof target !== 'string') {
-                throw new Error(`[$group] El operador '${operator}' en '${key}' espera un campo string (ej: '$precio').`);
-            }
+        if (!config || typeof config !== 'object') {
+            throw new Error("[$group] Requiere una configuración de objeto válida.");
         }
     }
+
+    execute(data: any[], config: any): any[] {
+        const { _id, ...accumulators } = config;
+        const groups = new Map<string, any>();
+
+        const AGG_SUM = Symbol('sum');
+        const AGG_CNT = Symbol('cnt');
+
+        for (const item of data) {
+            // 🟢 Resuelve el ID del grupo usando evaluate (soporta paths anidados nativos)
+            const resolvedId = _id !== undefined ? this.expressionEngine.evaluate(_id, item) : null;
+            const groupId = resolvedId !== null && resolvedId !== undefined ? String(resolvedId) : 'root';
+
+            if (!groups.has(groupId)) {
+                groups.set(groupId, { _id: groupId === 'root' ? null : resolvedId });
+            }
+            const group = groups.get(groupId);
+
+            for (const [key, accConfig] of Object.entries<any>(accumulators)) {
+                if (!accConfig || typeof accConfig !== 'object') continue;
+
+                const [op, fieldPath] = Object.entries(accConfig)[0];
+                // 🟢 Evaluamos dinámicamente el valor acumulable
+                const value = this.expressionEngine.evaluate(fieldPath, item);
+
+                switch (op) {
+                    case '$sum':
+                        group[key] = (group[key] || 0) + (Number(value) || 0);
+                        break;
+                    case '$count':
+                        group[key] = (group[key] || 0) + 1;
+                        break;
+                    case '$avg':
+                        group[key] = group[key] || { [AGG_SUM]: 0, [AGG_CNT]: 0 };
+                        group[key][AGG_SUM] += (Number(value) || 0);
+                        group[key][AGG_CNT] += 1;
+                        break;
+                }
+            }
+        }
+
+        return Array.from(groups.values()).map(g => {
+            for (const key in g) {
+                if (g[key] && typeof g[key] === 'object' && AGG_SUM in g[key]) {
+                    g[key] = g[key][AGG_SUM] / (g[key][AGG_CNT] || 1);
+                }
+            }
+            return g;
+        });
+    }
+
+
 
     private applyAccumulator(acc: GroupAccumulator, items: any[]): any {
         const field = Object.keys(acc)[0];
@@ -78,25 +89,67 @@ export class GroupStage implements IQueryStage {
 
 @Injectable()
 export class LookupStage implements IQueryStage {
-    constructor(private readonly engine: RelationEngine) { }
+    private readonly logger = new Logger(LookupStage.name);
 
-    async execute(data: any[], config: LookupConfig) {
-        return await this.engine.applyLookup(data, config as any);
-    }
+    constructor(
+        private readonly moduleRef: ModuleRef,
+        private readonly metadataRegistry: MetadataRegistry,
+        private readonly expressionEngine: ExpressionEngine
+    ) { }
 
     validate(config: any): void {
-        StageUtils.validateObject(config, '$lookup');
+        if (!config?.from || !config?.localField || !config?.foreignField || !config?.as) {
+            throw new BadRequestException("Configuración incompleta para $lookup.");
+        }
+    }
 
-        const required = ['from', 'localField', 'foreignField', 'as'];
-        for (const field of required) {
-            if (!config[field]) {
-                throw new Error(`[$lookup] Mal configurado: falta la propiedad obligatoria '${field}'.`);
+    async execute(data: any[], config: any): Promise<any[]> {
+        this.validate(config);
+        const { from, localField, foreignField, as } = config;
+
+        const entityClass = this.metadataRegistry.getEntityBySheetName(from);
+        if (!entityClass) {
+            this.logger.error(`No se encontró entidad para la hoja: '${from}'`);
+            return data;
+        }
+
+        const repositoryToken = `${entityClass.name}Repository`;
+        let foreignRepository: any;
+
+        try {
+            foreignRepository = this.moduleRef.get(repositoryToken, { strict: false });
+        } catch {
+            this.logger.error(`Repositorio no registrado en el contexto de NestJS: ${repositoryToken}`);
+            return data;
+        }
+
+        const foreignData = await foreignRepository.findAllRaw?.() ??
+            await foreignRepository.find?.({}, { includeInactive: true }) ?? [];
+
+        // 🟢 Index Map O(N+M) - Robusto para buscar campos profundos en la tabla foránea
+        const indexMap = foreignData.reduce((map, item) => {
+            const rawItem = this.expressionEngine.extractRawData(item);
+            const foreignValue = this.expressionEngine.getNestedValue(rawItem, foreignField);
+
+            if (foreignValue !== undefined && foreignValue !== null) {
+                const key = String(foreignValue).trim();
+                if (!map.has(key)) map.set(key, []);
+                map.get(key)!.push(item);
             }
-        }
+            return map;
+        }, new Map<string, any[]>());
 
-        if (typeof config.from !== 'string') {
-            throw new Error("[$lookup] 'from' debe ser un string (nombre de la colección/hoja).");
-        }
+        // Mapeo final cruzando colecciones
+        return data.map(item => {
+            const rawItem = this.expressionEngine.extractRawData(item);
+            const localValue = this.expressionEngine.getNestedValue(rawItem, localField);
+            const lookupKey = localValue !== undefined && localValue !== null ? String(localValue).trim() : '';
+
+            return {
+                ...item,
+                [as]: indexMap.get(lookupKey) || []
+            };
+        });
     }
 }
 
