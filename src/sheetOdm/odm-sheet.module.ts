@@ -41,6 +41,7 @@ import { AggregationBuilder } from './pipelines/aggregation.builder';
 import { DATA_TRANSFORM_OPERATOR, FILTER_OPERATOR, PIPELINE_STAGE } from './pipelines/pipeline.constants';
 import { EqOperator, NeOperator, GtOperator, GteOperator, LtOperator, LteOperator, InOperator, NinOperator, ExistsOperator, RegexOperator } from './pipelines/operadores/filter.operators';
 import { IfOperator, MultiplyOperator, IncOperator, MinMaxOperator, RoundOperator, MathOperator, UpperOperator, TrimOperator, ConcatOperator, DateAddOperator, TimeDiffOperator, AggregateOperator } from './pipelines/operadores/transform.operators';
+import { GasService } from './core/base/services/gas.service';
 
 // =========================================================================
 // UTILIDADES DE TOKENS (Exportar de manera pública en tu librería)
@@ -58,6 +59,7 @@ export const InjectRepository = (entity: ClassType) => Inject(getRepositoryToken
 // LISTA DE PROVEEDORES DEL CORE LOGICIAL
 // =========================================================================
 const CORE_PROVIDERS: Provider[] = [
+    GasService,
     // 🟢 EL NUEVO CORAZÓN DE LAS CONSULTAS
     AggregationBuilder,
     PipelineOrchestrator,
