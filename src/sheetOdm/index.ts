@@ -30,7 +30,7 @@ export * from './strategy/naming.strategy';
 
 // 7. Motores de Consulta
 export * from './engines/projection.service';
-export * from './engines/dependientesnivel1/aggregation.engine';
+
 export * from './engines/mutationEngine';
 
 // 8. Módulo Principal

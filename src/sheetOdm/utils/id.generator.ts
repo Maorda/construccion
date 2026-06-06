@@ -1,20 +1,20 @@
 import { v4 as uuidv4 } from 'uuid';
+import { nanoid } from 'nanoid';
 
-export class IdGenerator {
+export class IdFactory {
     /**
-     * Genera un UUID v4 estándar
-     * Ejemplo: '1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed'
+     * Recomendado para PKs de BD. 
+     * El estándar de la industria para evitar colisiones.
      */
-    static generate(): string {
+    static createUUID(): string {
         return uuidv4();
     }
 
     /**
-     * Genera un ID corto y legible si prefieres algo menos extenso
-     * (Requiere la librería nanoid)
+     * Recomendado para IDs de referencia externa o URLs legibles.
+     * nanoid es 2x más rápido que uuid y más seguro que cortar un string.
      */
-    static generateShort(): string {
-        // Ejemplo: 'V1StGXR8_Z5jdHi6B-myT'
-        return uuidv4().split('-')[0].toUpperCase();
+    static createShort(): string {
+        return nanoid(10); // 10 caracteres con alta entropía
     }
 }
