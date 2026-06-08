@@ -5,6 +5,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { useContainer } from 'class-validator';
 import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
 import { GoogleHealthService } from '@sheetOdm/services/google-health.service';
+import { GasTelemetryInterceptor } from '@sheetOdm/core/interceptors/gas-telemetry.interceptor';
 // Asegúrate de que la ruta de importación coincida con tu estructura
 
 
@@ -21,6 +22,7 @@ async function bootstrap() {
       skipMissingProperties: true
     }),
   );
+  app.useGlobalInterceptors(new GasTelemetryInterceptor());
 
   // --- CONFIGURACIÓN DE CORS ---
   const writelist = [

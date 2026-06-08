@@ -17,7 +17,7 @@ import { InfrastructureProvisioner } from '@sheetOdm/services/InfrastructureProv
       isGlobal: true,
       envFilePath: '.env',
     }),
-    OdmSheetModule.registerAsync({
+    OdmSheetModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         googleDriveConfig: {
@@ -57,10 +57,12 @@ export class AppModule implements OnApplicationBootstrap {
     try {
       const provisioner = this.moduleRef.get(InfrastructureProvisioner, { strict: false });
       await provisioner.syncSchema();
+
     } catch (error) {
       this.logger.error('❌ Error crítico en la inicialización:', error.message);
     }
 
     this.logger.log('--- ✅ INFRAESTRUCTURA LISTA ---');
   }
+
 }

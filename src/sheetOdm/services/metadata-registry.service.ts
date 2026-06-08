@@ -144,5 +144,9 @@ export class MetadataRegistry {
         };
     }
 
-
+    getColumnNamesForGas<T extends object>(entityClass: ClassType<T>): string[] {
+        const schema = this.getSchema(entityClass);
+        // Mapea tus columnas de TS a sus nombres físicos en Sheet
+        return schema.columnList.map(prop => schema.columns[prop]?.name || prop);
+    }
 }

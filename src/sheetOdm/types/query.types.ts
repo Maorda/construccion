@@ -48,6 +48,7 @@ export interface QueryOptions<T = any> {
     skip?: number;
     forceRefresh?: boolean;
     customConstructor?: ConstructorSignature<T, any>;
+    lean?: boolean;
 }
 export type PipelineStage =
     | { $match: Record<string, any> }

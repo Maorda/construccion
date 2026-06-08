@@ -127,7 +127,10 @@ const CORE_PROVIDERS: Provider[] = [
 @Global()
 @Module({
     imports: [
-        HttpModule,
+        HttpModule.register({
+            timeout: 5000,
+            maxRedirects: 5,
+        }),
         DiscoveryModule,
         CacheModule.register({
             isGlobal: true,

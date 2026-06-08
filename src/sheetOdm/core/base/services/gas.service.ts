@@ -2,7 +2,7 @@ import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
-import { AxiosError } from 'axios';
+
 
 @Injectable()
 export class GasService {
@@ -59,6 +59,43 @@ export class GasService {
             );
         }
     }
+    private async postWithRetry<T>(payload: Record<string, any>, retries = 2, delay = 1000): Promise<T | null> {
+        try {
+            const response = await firstValueFrom(
+                this.httpService.post('',
+                    { token: this.apiKey, ...payload }, // Cuerpo del POST
+                    {
+                        baseURL: this.webappUrl,
+                        timeout: 15000, // Escritura puede tomar un poco más
+                        headers: { 'Content-Type': 'application/json' }
+                    }
+                ),
+            );
+
+            if (response.data?.error) {
+                throw new Error(`GAS_INTERNAL_ERROR: ${response.data.error}`);
+            }
+
+            return response.data?.data as T;
+        } catch (error) {
+            // Lógica de reintento igual a la de requestWithRetry (GET)
+            if (retries > 0) {
+                await new Promise((resolve) => setTimeout(resolve, delay));
+                return this.postWithRetry<T>(payload, retries - 1, delay * 2);
+            }
+            throw new HttpException('Error en operación de escritura hacia Google.', HttpStatus.BAD_GATEWAY);
+        }
+    }
+
+    // --- NUEVOS MÉTODOS PARA EL WAL MANAGER ---
+
+    async insert<T>(sheet: string, data: T): Promise<any> {
+        return this.postWithRetry({ action: 'insert', sheet, data });
+    }
+
+    async update<T>(sheet: string, data: T): Promise<any> {
+        return this.postWithRetry({ action: 'update', sheet, data });
+    }
 
     /**
      * Busca un único documento usando el índice de Google Sheets
@@ -74,34 +111,14 @@ export class GasService {
         return this.requestWithRetry<T[]>({ action: 'findMany', sheet, column, value }) || [];
     }
 
-    /**
-     * Método Populate nativo en la RAM de Fly.io (Evita Timeouts de Google)
-     * Resuelve relaciones 1:1 o 1:N cruzando datos en memoria
-     */
-    populate<T, R>(docs: T | T[], foreignData: R[], foreignKey: keyof R, localKey: keyof T, isMany = false): T | T[] {
-        if (!docs) return docs;
-        const isArray = Array.isArray(docs);
-        const docList = isArray ? docs : [docs];
-
-        // Construcción del Mapa en memoria en Fly.io (Complejidad O(M))
-        const foreignMap = new Map<string, any>();
-        for (const row of foreignData) {
-            const keyVal = String(row[foreignKey]).toLowerCase().trim();
-            if (isMany) {
-                if (!foreignMap.has(keyVal)) foreignMap.set(keyVal, []);
-                foreignMap.get(keyVal).push(row);
-            } else {
-                foreignMap.set(keyVal, row);
-            }
-        }
-
-        // Hidratación in-memory (Complejidad O(N))
-        docList.forEach((doc) => {
-            const joinValue = String(doc[localKey]).toLowerCase().trim();
-            const propName = `${String(foreignKey).toLowerCase()}_relation`;
-            doc[propName] = foreignMap.get(joinValue) || (isMany ? [] : null);
+    async delete(sheet: string, row: number): Promise<any> {
+        // Pasamos el _row dentro de un objeto 'data' para mantener consistencia con el doPost
+        return this.postWithRetry({
+            action: 'delete',
+            sheet,
+            data: { _row: row }
         });
-
-        return isArray ? docList : docList[0];
     }
+
+
 }

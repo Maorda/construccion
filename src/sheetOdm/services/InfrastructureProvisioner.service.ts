@@ -27,7 +27,7 @@ export class InfrastructureProvisioner implements OnApplicationBootstrap {
         // Traemos los títulos una sola vez para ahorrar cuota de la API de Google
         const existingSheets = await this.gateway.getExistingSheetTitles();
         const existingSheetsUpper = existingSheets.map(s => s.toUpperCase());
-
+        const archiveConfig: Record<string, string> = {};
         for (const entity of entities) {
             const dto = Reflect.getMetadata(SHEETS_DTO, entity);
             if (!dto) {
@@ -38,6 +38,7 @@ export class InfrastructureProvisioner implements OnApplicationBootstrap {
             this.validateSchemaConsistency(entity, dto);
 
             const sheetName = (Reflect.getMetadata(SHEETS_TABLE_NAME, entity) || entity.name).toUpperCase();
+            archiveConfig[sheetName] = `${sheetName}_HISTORICO`;
             const definedHeaders = this.getHeadersForEntity(entity);
             const sheetExists = existingSheetsUpper.includes(sheetName);
 
@@ -47,6 +48,23 @@ export class InfrastructureProvisioner implements OnApplicationBootstrap {
                 await this.migrateExistingSheet(sheetName, definedHeaders);
             }
         }
+        await this.syncConfigSheet(archiveConfig);
+
+    }
+    private async syncConfigSheet(config: Record<string, string>) {
+        const configSheetName = '_CONFIG';
+        // 1. Asegurar que existe la hoja _CONFIG
+        const sheets = await this.gateway.getExistingSheetTitles();
+        if (!sheets.includes(configSheetName)) {
+            await this.gateway.createSheet(configSheetName);
+        }
+
+        // 2. Escribir el JSON en la celda A1
+        // (Opcional: podrías formatearlo mejor, pero JSON en A1 es suficiente)
+        await this.gateway.writeHeaders(configSheetName, ['CONFIG_JSON']);
+        await this.gateway.updateRow(configSheetName, 2, [JSON.stringify(config)]);
+
+        this.logger.log(`✅ Configuración de archivado escrita en la hoja "${configSheetName}".`);
     }
 
     private async provisionNewSheet(sheetName: string, headers: string[]) {

@@ -82,3 +82,52 @@ Levantamiento del Servidor: Integraremos el módulo en AppModule y arrancaremos 
 IMPORTANT
 
 Aprobación Requerida: Este plan unifica tus componentes completados y diseña los faltantes. ¿Me das tu aprobación para comenzar con la creación de los archivos y la codificación de la base para poner todo en marcha?
+
+1. Configuración exacta en Google Sheets y GAS (Para el usuario de la librería)
+Este es el proceso paso a paso que el desarrollador final ejecutará en su entorno (y que idealmente documentarás en el README.md de tu librería pública):
+
+Crear la hoja: El desarrollador crea un Google Sheet en su cuenta de Google Drive.
+
+Abrir el editor de código: Dentro de su hoja, va al menú superior, selecciona Extensiones > Apps Script.
+
+Pegar el código: Borra el código por defecto y pega el script del motor de indexación y búsqueda que implementaste (el que tiene el doPost, onEdit, findOne, etc.).
+
+Configurar la clave de seguridad (API_KEY):
+
+En el editor de Apps Script, va al engranaje de Configuración del proyecto (ícono de ⚙️ a la izquierda).
+
+Baja hasta la sección Propiedades del script y haz clic en Añadir propiedad del script.
+
+Define la propiedad API_KEY y asígnale un valor aleatorio y seguro (por ejemplo: mi_secreto_privado_123). Este token será la contraseña entre NestJS y GAS.
+
+Configurar el Worker Asíncrono (Trigger de tiempo):
+
+Va al ícono de Activadores (el relojito ⏰ a la izquierda).
+
+Haz clic abajo a la derecha en Añadir activador.
+
+Selecciona qué función ejecutar: processIndexQueue.
+
+Selecciona qué despliegue ejecutar: Principal.
+
+Selecciona la fuente del evento: Según tiempo.
+
+Selecciona el tipo de activador basado en el tiempo: Temporizador de minutos.
+
+Selecciona el intervalo de minutos: Cada minuto.
+
+Guarda el activador (Google le pedirá otorgar permisos de lectura/escritura sobre su propia hoja).
+
+Desplegar como Aplicación Web:
+
+Arriba a la derecha, hace clic en Implementar > Nueva implementación.
+
+Selecciona el tipo: Aplicación web (haciendo clic en el engranaje).
+
+Descripción: "Motor ODM v1".
+
+Ejecutar como: Yo (tu-correo@gmail.com). (Esto permite que NestJS actúe en nombre del desarrollador utilizando sus permisos).
+
+Quién tiene acceso: Cualquiera (Anyone). (Tu validación interna del API_KEY en el doPost se encargará de rechazar peticiones externas no autorizadas).
+
+Haz clic en Implementar y copia la URL de la aplicación web generada (la que termina en /exec).
