@@ -1,5 +1,6 @@
 import { Injectable, Logger, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { SHEETS_TABLE_NAME, SHEETS_RELATIONS_LIST, SHEETS_ALL_RELATIONS } from '@sheetOdm/constants/metadata.constants';
+import { RelationOptions } from '@sheetOdm/pipelines/types';
 
 import { SheetsRepository } from '@sheetOdm/repository/sheets.repository';
 import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
@@ -8,7 +9,6 @@ import { ClassType, FilterQuery } from '@sheetOdm/types/query.types';
 @Injectable()
 export class RelationEngine {
     private readonly logger = new Logger(RelationEngine.name);
-    private readonly entityClass: ClassType
     constructor(
         private readonly metadataRegistry: MetadataRegistry
     ) { }

@@ -22,6 +22,7 @@ export class ExpressionEngine {
         @Inject(DATA_TRANSFORM_OPERATOR) private readonly transforms: IExpressionOperator[],
         @Inject(FILTER_OPERATOR) private readonly filters: IExpressionOperator[]
     ) {
+        console.log('TRANSFORMS:', this.transforms)
         this.transforms.forEach(op => this.transformRegistry.set(op.name, op));
         this.filters.forEach(op => this.filterRegistry.set(op.name, op));
     }

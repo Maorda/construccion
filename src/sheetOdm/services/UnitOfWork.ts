@@ -3,14 +3,16 @@ import { ClassType } from '@sheetOdm/types/query.types';
 import { SheetDocument } from '@sheetOdm/wrapper/sheetDocument';
 import { ModuleRef } from '@nestjs/core';
 import { getRepositoryToken } from '@sheetOdm/utils/helper';
+import { OutboxEntry, OutboxService, OutboxStatus, TypeOp } from '@sheetOdm/core/outbox/OutboxEntry';
+import { IdFactory } from '@sheetOdm/utils/id.generator';
 
 export interface PendingOperation {
     type: 'INSERT' | 'UPDATE' | 'DELETE';
     entityClass: Function;
     sheetName: string;
     doc: SheetDocument<any>;
+    pk: string | number;
 }
-
 @Injectable({ scope: Scope.REQUEST })
 export class UnitOfWork {
     private readonly logger = new Logger(UnitOfWork.name);
@@ -18,8 +20,8 @@ export class UnitOfWork {
     private pendingOperations: PendingOperation[] = [];
     private isTransactional = false;
 
-    // Inyectamos ModuleRef para resolver los repositorios correspondientes bajo demanda
-    constructor(private readonly moduleRef: ModuleRef) { }
+    // 🔥 Inyectamos el OutboxService (y removemos ModuleRef si ya no resolvemos repositorios aquí)
+    constructor(private readonly outboxService: OutboxService) { }
 
     private getCompositeKey(entityClass: ClassType<any>, pk: string | number): string {
         return `${entityClass.name}:${pk}`;
@@ -40,7 +42,6 @@ export class UnitOfWork {
         return Array.from(this.identityMap.values());
     }
 
-    // --- CONTROL DE TRANSACCIONES ---
     public startTransaction() {
         this.isTransactional = true;
         this.pendingOperations = [];
@@ -65,7 +66,8 @@ export class UnitOfWork {
     }
 
     /**
-     * 🔥 NUEVO: Realiza el volcado atómico agrupado hacia los repositorios expertos
+     * 🔥 COMMIT REFACTORIZADO (Patrón Outbox)
+     * Serializa las operaciones y delega la persistencia atómica a la base de datos local.
      */
     public async commit(): Promise<void> {
         if (!this.isTransactional) {
@@ -79,40 +81,42 @@ export class UnitOfWork {
             return;
         }
 
-        this.logger.log(`[UOW] 🚀 Iniciando Commit Físico de ${this.pendingOperations.length} operaciones...`);
-
-        // 1. Agrupar las operaciones por clase de Entidad
-        const groups = new Map<Function, PendingOperation[]>();
-        for (const op of this.pendingOperations) {
-            if (!groups.has(op.entityClass)) {
-                groups.set(op.entityClass, []);
-            }
-            groups.get(op.entityClass)!.push(op);
-        }
+        this.logger.log(`[UOW] 🚀 Asegurando ${this.pendingOperations.length} operaciones en la Outbox local...`);
 
         try {
-            // 2. Ejecutar de forma secuencial controlada por repositorio para proteger FKs jerárquicas
-            for (const [entityClass, ops] of groups.entries()) {
-                const repoToken = getRepositoryToken(entityClass);
-                const repo = this.moduleRef.get<any>(repoToken, { strict: false });
+            // 1. Transformar a formato serializable (Convertimos la Clase a String)
+            const outboxEntries: OutboxEntry[] = this.pendingOperations.map(op => {
+                const now = new Date();
 
-                if (!repo || typeof repo.commitBulk !== 'function') {
-                    throw new Error(`El repositorio para ${entityClass.name} no está registrado o no implementa commitBulk().`);
-                }
+                return {
+                    id: IdFactory.createUUID(),                // Requerido por tu interfaz
+                    entityName: op.entityClass.name, // El nombre de tu entidad (ej. 'User')
+                    sheetName: op.sheetName,
+                    operation: op.type as unknown as TypeOp, // Mapeamos el 'type' a tu enum TypeOp
+                    doc: op.doc,                     // Tu SheetDocument
+                    payload: op.doc,                 // Aquí puedes mandar el doc entero, o si tienes un op.doc.toJS(), mejor.
+                    status: OutboxStatus.PENDING,    // Usamos tu enum
+                    attempts: 0,                     // Requerido: Inicia en 0
+                    createdAt: now,
+                    updatedAt: now                   // Requerido por tu interfaz
+                };
+            });
 
-                this.logger.debug(`[UOW] 📭 Enviando ${ops.length} operaciones en lote al repositorio [${repo.sheetName}]`);
-                await repo.commitBulk(ops);
-            }
+            // 2. Persistencia Atómica
+            // Si la base de datos local falla (ej. caída de red), saltará al catch.
+            // Si funciona, garantizamos que no se perderá ninguna operación.
+            await this.outboxService.saveTransaction(outboxEntries);
 
-            this.logger.log('🎉 [UOW] ¡Commit masivo completado con éxito en Google Sheets!');
+            this.logger.log('🎉 [UOW] ¡Transacción asegurada en la Outbox con éxito!');
 
-            // 3. Limpiar estado transaccional tras éxito
+            // 3. Limpiar estado transaccional
             this.pendingOperations = [];
             this.isTransactional = false;
 
         } catch (error: any) {
-            this.logger.error(`❌ [UOW Commit Error] Falló el volcado masivo: ${error.message}`);
-            this.rollback(); // Limpieza de seguridad ante errores de red o cuota API
+            // Si falla el guardado local, revertimos todo y avisamos al cliente.
+            this.logger.error(`❌ [UOW Commit Error] Falló la escritura en Outbox: ${error.message}`);
+            this.rollback();
             throw error;
         }
     }
@@ -135,4 +139,5 @@ export class UnitOfWork {
             if (key.startsWith(prefix)) this.identityMap.delete(key);
         }
     }
+
 }

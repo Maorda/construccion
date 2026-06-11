@@ -1,4 +1,4 @@
-import { Global, Module, DynamicModule, Provider, Inject } from '@nestjs/common';
+import { Global, Module, DynamicModule, Provider, Inject, ClassProvider } from '@nestjs/common';
 import { DiscoveryModule, APP_INTERCEPTOR, ModuleRef } from '@nestjs/core';
 import { HttpModule } from '@nestjs/axios';
 import { CacheModule, CacheInterceptor } from '@nestjs/cache-manager';
@@ -42,6 +42,12 @@ import { DATA_TRANSFORM_OPERATOR, FILTER_OPERATOR, PIPELINE_STAGE } from './pipe
 import { EqOperator, NeOperator, GtOperator, GteOperator, LtOperator, LteOperator, InOperator, NinOperator, ExistsOperator, RegexOperator } from './pipelines/operadores/filter.operators';
 import { IfOperator, MultiplyOperator, IncOperator, MinMaxOperator, RoundOperator, MathOperator, UpperOperator, TrimOperator, ConcatOperator, DateAddOperator, TimeDiffOperator, AggregateOperator } from './pipelines/operadores/transform.operators';
 import { GasService } from './core/base/services/gas.service';
+import { TransactionInterceptor } from './core/interceptors/TransactionInterceptor';
+
+import { OutboxModule } from './core/outbox/outbox.module';
+import { SheetDataTransformer } from './core/base/sheetDataTransformer';
+import { MutationEngine } from './engines/mutationEngine';
+import { WalManagerService } from './services/wal-manager.service';
 
 // =========================================================================
 // UTILIDADES DE TOKENS (Exportar de manera pública en tu librería)
@@ -65,44 +71,46 @@ const CORE_PROVIDERS: Provider[] = [
     PipelineOrchestrator,
     ExpressionEngine,
 
+    TransactionInterceptor,
+
     // 🟢 REFACTORIZACIÓN MULTI-PROVIDER STAGES:
     // Conectamos cada clase al token PIPELINE_STAGE que el orquestador exige vía @Inject
     // 2. Operadores de Filtro (Multi-Provider)
-    { provide: FILTER_OPERATOR, useClass: EqOperator },
-    { provide: FILTER_OPERATOR, useClass: NeOperator },
-    { provide: FILTER_OPERATOR, useClass: GtOperator },
-    { provide: FILTER_OPERATOR, useClass: GteOperator },
-    { provide: FILTER_OPERATOR, useClass: LtOperator },
-    { provide: FILTER_OPERATOR, useClass: LteOperator },
-    { provide: FILTER_OPERATOR, useClass: InOperator },
-    { provide: FILTER_OPERATOR, useClass: NinOperator },
-    { provide: FILTER_OPERATOR, useClass: ExistsOperator },
-    { provide: FILTER_OPERATOR, useClass: RegexOperator },
+    { provide: FILTER_OPERATOR, useClass: EqOperator, multi: true } as any,
+    { provide: FILTER_OPERATOR, useClass: NeOperator, multi: true } as any,
+    { provide: FILTER_OPERATOR, useClass: GtOperator, multi: true } as any,
+    { provide: FILTER_OPERATOR, useClass: GteOperator, multi: true } as any,
+    { provide: FILTER_OPERATOR, useClass: LtOperator, multi: true } as any,
+    { provide: FILTER_OPERATOR, useClass: LteOperator, multi: true } as any,
+    { provide: FILTER_OPERATOR, useClass: InOperator, multi: true } as any,
+    { provide: FILTER_OPERATOR, useClass: NinOperator, multi: true } as any,
+    { provide: FILTER_OPERATOR, useClass: ExistsOperator, multi: true } as any,
+    { provide: FILTER_OPERATOR, useClass: RegexOperator, multi: true } as any,
 
     // 3. Operadores de Transformación (Multi-Provider)
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: IfOperator },
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: MultiplyOperator },
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: IncOperator },
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: MinMaxOperator },
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: RoundOperator },
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: MathOperator },
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: UpperOperator },
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: TrimOperator },
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: ConcatOperator },
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: DateAddOperator },
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: TimeDiffOperator },
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: AggregateOperator },
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: IfOperator, multi: true } as any,
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: MultiplyOperator, multi: true } as any,
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: IncOperator, multi: true } as any,
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: MinMaxOperator, multi: true } as any,
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: RoundOperator, multi: true } as any,
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: MathOperator, multi: true } as any,
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: UpperOperator, multi: true } as any,
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: TrimOperator, multi: true } as any,
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: ConcatOperator, multi: true } as any,
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: DateAddOperator, multi: true } as any,
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: TimeDiffOperator, multi: true } as any,
+    { provide: DATA_TRANSFORM_OPERATOR, useClass: AggregateOperator, multi: true } as any,
 
     // 4. Pipeline Stages (Multi-Provider)
-    { provide: PIPELINE_STAGE, useClass: MatchStage },
-    { provide: PIPELINE_STAGE, useClass: SortStage },
-    { provide: PIPELINE_STAGE, useClass: AddFieldsStage },
-    { provide: PIPELINE_STAGE, useClass: GroupStage },
-    { provide: PIPELINE_STAGE, useClass: LimitStage },
-    { provide: PIPELINE_STAGE, useClass: LookupStage },
-    { provide: PIPELINE_STAGE, useClass: ProjectStage },
-    { provide: PIPELINE_STAGE, useClass: SkipStage },
-    { provide: PIPELINE_STAGE, useClass: UnwindStage },
+    { provide: PIPELINE_STAGE, useClass: MatchStage, multi: true } as any,
+    { provide: PIPELINE_STAGE, useClass: SortStage, multi: true } as any,
+    { provide: PIPELINE_STAGE, useClass: AddFieldsStage, multi: true } as any,
+    { provide: PIPELINE_STAGE, useClass: GroupStage, multi: true } as any,
+    { provide: PIPELINE_STAGE, useClass: LimitStage, multi: true } as any,
+    { provide: PIPELINE_STAGE, useClass: LookupStage, multi: true } as any,
+    { provide: PIPELINE_STAGE, useClass: ProjectStage, multi: true } as any,
+    { provide: PIPELINE_STAGE, useClass: SkipStage, multi: true } as any,
+    { provide: PIPELINE_STAGE, useClass: UnwindStage, multi: true } as any,
 
     GoogleAutenticarService,
     GoogleHealthService,
@@ -121,12 +129,17 @@ const CORE_PROVIDERS: Provider[] = [
     UnitOfWork,
     TransformationEngine,
     ValidationEngine,
+    SheetDataTransformer,
+    MutationEngine,
+    WalManagerService
+
     //HydrationEngine,
 ];
 
 @Global()
 @Module({
     imports: [
+
         HttpModule.register({
             timeout: 5000,
             maxRedirects: 5,
@@ -171,6 +184,10 @@ export class OdmSheetModule {
 
         return {
             module: OdmSheetModule,
+            imports: [
+
+                OutboxModule,
+            ],
             providers: [
                 optionsProvider,
                 configProvider,

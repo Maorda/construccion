@@ -9,28 +9,59 @@ import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator
 import { UnitOfWork } from '@sheetOdm/services/UnitOfWork';
 import { QueryEngine } from '@sheetOdm/engines/query.engine';
 import { ClassType } from '@sheetOdm/types/query.types';
+import { ValidationEngine } from '@sheetOdm/engines/ValidationEngine';
+import { SheetDataTransformer } from '@sheetOdm/core/base/sheetDataTransformer';
+import { GasService } from '@sheetOdm/core/base/services/gas.service';
+import { WalManagerService } from '@sheetOdm/services/wal-manager.service';
+import { MutationEngine } from '@sheetOdm/engines/mutationEngine';
 
 @Injectable()
 export class SheetsRepositoryFactory {
     // Constructor limpio: solo necesitamos el contenedor de NestJS
-    constructor(private readonly moduleRef: ModuleRef) { }
+    constructor(
+        private readonly moduleRef: ModuleRef,
+        private readonly metadata: MetadataRegistry,
+        private readonly queryEngine: QueryEngine,
+        private readonly mutationEngine: MutationEngine,
+        private readonly validationEngine: ValidationEngine,
+        private readonly transformer: SheetDataTransformer,
+        private readonly gasService: GasService,
+        private readonly gateway: SheetDataGateway,
+        private readonly relationManager: RelationManager,
+        private readonly walManager: WalManagerService
+    ) { }
 
     /**
      * Fabrica dinámicamente un SheetsRepository.
      * Si necesitas agregar más dependencias al Repository en el futuro,
      * no tendrás que modificar esta clase.
      */
-    create<T extends object>(entityClass: ClassType<T>): SheetsRepository<T> {
+    /**
+      * Factory asíncrona: resuelve solo lo necesario en tiempo de ejecución
+      */
+    async create<T extends object>(entityClass: ClassType<T>): Promise<SheetsRepository<T>> {
+        // Resolvemos dependencias con scope REQUEST/TRANSIENT
+        const [hydrator, uow, mapper] = await Promise.all([
+            this.moduleRef.resolve(SheetDocumentHydrator),
+            this.moduleRef.resolve(UnitOfWork),
+            this.moduleRef.resolve(DataMapper)
+        ]);
+
         return new SheetsRepository(
-            this.moduleRef.get(MetadataRegistry, { strict: false }),
-            this.moduleRef.get(QueryEngine, { strict: false }),
-            this.moduleRef.get(SheetDataGateway, { strict: false }),
+            this.metadata,
+            this.queryEngine,
+            this.mutationEngine,
+            this.validationEngine,
+            this.transformer,
+            this.gasService,
+            this.gateway,
             entityClass,
-            this.moduleRef.get(RelationManager, { strict: false }),
-            this.moduleRef.get(DataMapper, { strict: false }),
+            this.relationManager,
             this.moduleRef,
-            this.moduleRef.get(SheetDocumentHydrator, { strict: false }),
-            this.moduleRef.get(UnitOfWork, { strict: false }),
+            hydrator,
+            uow,
+            mapper,
+            this.walManager
         );
     }
 }

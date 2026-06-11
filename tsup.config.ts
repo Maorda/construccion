@@ -1,7 +1,10 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-    entry: ['src/index.ts'], // Tu punto de entrada principal
+    entry: {
+        index: 'src/main.ts',
+        'test-sheets': 'src/test-sheets.ts'
+    }, // Tu punto de entrada principal
     format: ['cjs', 'esm'],  // Genera tanto CommonJS como ES Modules
     dts: true,               // 🔥 Genera .d.ts y .d.cts automáticamente
     splitting: false,

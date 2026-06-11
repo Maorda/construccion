@@ -2,17 +2,17 @@ import { Logger, Module, OnApplicationBootstrap } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { envValidationSchema } from 'env.validation';
+import { envValidationSchema } from '../env.validation';
 import { OdmSheetModule } from '@sheetOdm/odm-sheet.module';
 import { CONNECTION_STABILITY } from '@sheetOdm/interfaces/database.options.interface';
 import { PlanillaModule } from './planilla/planilla.module';
 import { ModuleRef } from '@nestjs/core';
 import { InfrastructureProvisioner } from '@sheetOdm/services/InfrastructureProvisioner.service';
-
+import { configLoader } from '../configLoader';
 @Module({
   imports: [
     ConfigModule.forRoot({
-      ///load: [configLoader],
+      load: [configLoader],
       validationSchema: envValidationSchema,
       isGlobal: true,
       envFilePath: '.env',
@@ -37,7 +37,8 @@ import { InfrastructureProvisioner } from '@sheetOdm/services/InfrastructureProv
         checkConnectionOnBoot: true,
         timezone: config.get<string>('TIMEZONE') || 'UTC',//'America/Lima configurado en el .env',
         FORMAT_DATES: config.get<boolean>('FORMAT_DATES') || false, //configurado en el .env
-        timeout: CONNECTION_STABILITY.UNSTABLE
+        timeout: CONNECTION_STABILITY.UNSTABLE,
+        outboxPollingInterval: 10000,
       }),
     }),
 
@@ -52,6 +53,9 @@ export class AppModule implements OnApplicationBootstrap {
   constructor(private readonly moduleRef: ModuleRef) { }
 
   async onApplicationBootstrap() {
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
     this.logger.log('--- 🚀 INICIANDO SINCRONIZACIÓN DE INFRAESTRUCTURA ---');
 
     try {

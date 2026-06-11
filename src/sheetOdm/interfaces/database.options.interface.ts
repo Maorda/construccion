@@ -44,6 +44,7 @@ export interface DatabaseModuleOptions {
     timeout?: number;
     timezone?: string; // Ejemplo: 'America/Lima', 'Asia/Tokyo', 'UTC'
     formatDates?: boolean;
+    outboxPollingInterval?: number;
 }
 
 // Esta interfaz permite que el módulo reciba una fábrica para cargar opciones asíncronas

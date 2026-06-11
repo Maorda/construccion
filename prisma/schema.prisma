@@ -1,0 +1,33 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model OutboxEntry {
+  id         String    @id @default(uuid())
+  entityName String
+  operation  String    // INSERT, UPDATE, DELETE
+  sheetName  String
+  payload    Json      // Aquí se guarda tu op.doc
+  status     String    @default("PENDING")
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  startedAt  DateTime?
+  finishedAt DateTime?
+  error      String?
+
+  @@map("outbox_entries") // Buena práctica: nombres en minúscula y plural en DB
+}
+model ErrorAnalytics {
+  id        String   @id @default(uuid())
+  errorCode String
+  linkToDocs String?
+  count      Int      @default(1)
+  lastSeen   DateTime @default(now())
+}

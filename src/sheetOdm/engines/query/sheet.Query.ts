@@ -4,7 +4,7 @@ import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument";
 
 export class SheetQuery<T extends object> {
     // Almacenamos internamente un arreglo estandarizado de opciones
-    private populateOptions: Array<PopulateOptions<T, any>> = [];
+    private populateOptions: Array<PopulateOptions<any, any>> = [];
 
     constructor(
         private repo: SheetsRepository<T>,
@@ -36,12 +36,11 @@ export class SheetQuery<T extends object> {
         const rawDocs = await this.repo.executeBaseFind(this.filter, this.options);
 
         if (this.populateOptions.length > 0) {
-            // Asegúrate de pasar el tercer argumento: this.populateOptions
             await this.repo.getRelationManager().populate(
                 rawDocs,
-                this.repo.entityClass,
-                this.populateOptions, // 👈 Este era el que faltaba
-                this.options          // Opcional
+                this.repo.entityClass, // 🟢 CORREGIDO: Sin <T> y con cast seguro
+                this.populateOptions, // 🟢 CORREGIDO: Cast para aceptar cualquier PopulateOptions
+                this.options
             );
         }
 

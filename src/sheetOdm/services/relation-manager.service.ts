@@ -3,7 +3,8 @@ import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
 import { ModuleRef } from '@nestjs/core';
 import { SheetsRepository } from '@sheetOdm/repository/sheets.repository';
 import { getRepositoryToken } from '@sheetOdm/utils/helper';
-import { ClassType, PopulateOptions } from '@sheetOdm/types/query.types';
+import { ClassType, PopulateOptions, QueryOptions } from '@sheetOdm/types/query.types';
+import { SheetDocument } from '@sheetOdm/wrapper/sheetDocument';
 
 @Injectable()
 export class RelationManager {
@@ -14,14 +15,17 @@ export class RelationManager {
 
     /**
      * Resuelve y "popula" de manera óptima las relaciones detectadas en los metadatos.
+     * Soporta filtros, límites, ordenamiento y proyecciones dinámicas para sub-entidades.
      */
     async populate<T extends object>(
-        entities: T[],
+        documents: SheetDocument<T>[],
         entityClass: ClassType<T>,
-        populateOptions: PopulateOptions<T>[], // Cambiamos de opciones simples a array de configuración
-        options?: { includeInactive?: boolean }
-    ): Promise<T[]> {
-        if (!entities || entities.length === 0 || populateOptions.length === 0) return entities;
+        populateOptions: PopulateOptions<T, any>[],
+        options?: QueryOptions<T>
+    ): Promise<SheetDocument<T>[]> {
+        if (!documents || documents.length === 0 || !populateOptions || populateOptions.length === 0) {
+            return documents;
+        }
 
         const localPkField = this.registry.getPrimaryKeyField(entityClass);
 
@@ -34,37 +38,70 @@ export class RelationManager {
             const childRepo = this.getRepositoryForEntity(targetEntityClass);
             const targetPkField = this.registry.getPrimaryKeyField(targetEntityClass);
 
+            // Construimos las opciones dinámicas de consulta para el hijo basándonos en PopulateOptions
+            const childQueryOptions: QueryOptions<any> = {
+                includeInactive: options?.includeInactive,
+                forceRefresh: options?.forceRefresh,
+                projection: popConfig.select ? this.buildProjection(popConfig.select) : undefined,
+                limit: popConfig.limit,
+                sort: popConfig.sort ? this.normalizeSort(popConfig.sort) : undefined
+            };
+
             if (relOptions.isMany) {
-                // Caso A: @SubCollection
+                // ==========================================
+                // CASO A: @SubCollection (OneToMany / ManyToMany)
+                // ==========================================
                 const joinColumn = relOptions.options?.joinColumn || `${entityClass.name.toLowerCase()}Id`;
-                const parentIds = entities.map(e => (e as any)[localPkField]).filter(Boolean);
+                const parentIds = documents.map(doc => (doc as any)[localPkField]).filter(Boolean);
 
-                // Fusión del filtro del usuario (match) con el filtro de relación
+                if (parentIds.length === 0) continue;
+
                 const query = { ...popConfig.match, [joinColumn]: { $in: parentIds } };
+                const relatedData = await childRepo.find(query, childQueryOptions);
 
-                const relatedData = await childRepo.find(query, { includeInactive: options?.includeInactive });
-
-                for (const parent of entities) {
-                    const parentId = (parent as any)[localPkField];
-                    (parent as any)[relKey] = relatedData.filter(c => (c as any)[joinColumn] === parentId);
+                // Agrupamos en un Mapa indexado por la FK para velocidad O(1) en la asignación
+                const relatedMap = new Map<any, any[]>();
+                for (const childDoc of relatedData) {
+                    const fkValue = (childDoc as any)[joinColumn];
+                    if (!relatedMap.has(fkValue)) {
+                        relatedMap.set(fkValue, []);
+                    }
+                    relatedMap.get(fkValue)!.push(childDoc);
                 }
+
+                // Asignamos los arreglos a cada documento padre
+                for (const parentDoc of documents) {
+                    const parentId = (parentDoc as any)[localPkField];
+                    (parentDoc as any)[relKey] = relatedMap.get(parentId) || [];
+                }
+
             } else {
-                // Caso B: @Reference
+                // ==========================================
+                // CASO B: @Reference (ManyToOne / OneToOne)
+                // ==========================================
                 const joinColumn = relOptions.joinColumn;
-                const targetIdsNeeded = entities.map(e => (e as any)[joinColumn]).filter(Boolean);
+                const targetIdsNeeded = documents.map(doc => (doc as any)[joinColumn]).filter(Boolean);
 
-                // CORRECCIÓN: Usamos targetIdsNeeded, no parentIds
+                if (targetIdsNeeded.length === 0) continue;
+
                 const query = { ...popConfig.match, [targetPkField]: { $in: targetIdsNeeded } };
+                const relatedData = await childRepo.find(query, childQueryOptions);
 
-                const relatedData = await childRepo.find(query, { includeInactive: options?.includeInactive });
+                // Mapeamos los objetos indexados por su PK primaria destino
+                const relatedMap = new Map<any, any>();
+                for (const childDoc of relatedData) {
+                    const pkValue = (childDoc as any)[targetPkField];
+                    relatedMap.set(pkValue, childDoc);
+                }
 
-                for (const current of entities) {
-                    const foreignKeyValue = (current as any)[joinColumn];
-                    (current as any)[relKey] = relatedData.find(p => (p as any)[targetPkField] === foreignKeyValue) || null;
+                // Asignamos la relación singular a cada documento
+                for (const currentDoc of documents) {
+                    const foreignKeyValue = (currentDoc as any)[joinColumn];
+                    (currentDoc as any)[relKey] = relatedMap.get(foreignKeyValue) || null;
                 }
             }
         }
-        return entities;
+        return documents;
     }
 
     /**
@@ -83,12 +120,10 @@ export class RelationManager {
             const targetClass = relOptions.targetEntity();
             const childRepo = this.getRepositoryForEntity(targetClass);
 
-            // Extraemos la FK según corresponda al tipo de relación
             const fkName = relOptions.isMany
                 ? (relOptions.options?.joinColumn || `${parentClass.name.toLowerCase()}Id`)
                 : relOptions.joinColumn;
 
-            // Normalizamos la estructura para procesar iterativamente (un solo objeto o array)
             const dataset = Array.isArray(relationData) ? relationData : [relationData];
 
             for (const item of dataset) {
@@ -100,12 +135,14 @@ export class RelationManager {
                     item[fkName] = parentId;
                     doc = childRepo.create(item);
                 }
-                // Persistencia en Google Sheets delegada a la unidad operativa del repositorio
                 await childRepo.save(doc);
             }
         }
     }
 
+    /**
+     * Obtiene de forma dinámica el repositorio asociado a una entidad.
+     */
     public getRepositoryForEntity<R extends object = any>(entityClass: ClassType<R>): SheetsRepository<R> {
         const repoToken = getRepositoryToken(entityClass);
         const repo = this.moduleRef.get<SheetsRepository<R>>(repoToken, { strict: false });
@@ -116,8 +153,39 @@ export class RelationManager {
 
         return repo;
     }
+
+    /**
+     * Resuelve de manera asíncrona un repositorio usando una referencia de módulo específica.
+     */
     async resolveRepository<T extends object>(entityClass: ClassType<T>, moduleRef: ModuleRef): Promise<SheetsRepository<T>> {
         const repoToken = getRepositoryToken(entityClass);
         return moduleRef.get<SheetsRepository<T>>(repoToken, { strict: false });
+    }
+
+    // ==========================================
+    // MÉTODOS AUXILIARES DE SOPORTE
+    // ==========================================
+
+    /** Convierte una lista de campos ['id', 'name'] a un objeto de proyección { id: true, name: true } */
+    private buildProjection(selectFields: Array<any>): Record<string, boolean> {
+        const projection: Record<string, boolean> = {};
+        for (const field of selectFields) {
+            if (typeof field === 'string') {
+                projection[field] = true;
+            }
+        }
+        return projection;
+    }
+
+    /** Normaliza el formato de ordenamiento del populate al formato requerido por QueryOptions */
+    private normalizeSort(sortOption: Record<string, any>): { field: string; order: 'ASC' | 'DESC' } | undefined {
+        const keys = Object.keys(sortOption);
+        if (keys.length === 0) return undefined;
+
+        const field = keys[0];
+        const val = sortOption[field];
+        const order = (val === 1 || val === 'ASC') ? 'ASC' : 'DESC';
+
+        return { field, order };
     }
 }

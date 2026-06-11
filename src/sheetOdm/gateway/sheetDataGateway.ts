@@ -1,5 +1,6 @@
 // sheet-data.gateway.ts
 import { Injectable, Logger, Inject } from '@nestjs/common';
+import { GasService } from '@sheetOdm/core/base/services/gas.service';
 import { GoogleAutenticarService } from '@sheetOdm/services/auth.google.service';
 import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
 import { ClassType, ISheetDriver } from '@sheetOdm/types/query.types';
@@ -13,7 +14,16 @@ export class SheetDataGateway implements ISheetDriver {
         private readonly auth: GoogleAutenticarService,
         @Inject('SPREADSHEET_ID') private readonly spreadsheetId: string,
         private readonly metadataRegistry: MetadataRegistry,
+        private readonly gas: GasService,
     ) { }
+    // 🟢 LAS LECTURAS VAN POR GAS (Aprovecha tus índices y búsqueda binaria)
+    async findOne<T>(sheet: string, column: string, value: string): Promise<T | null> {
+        return this.gas.findOne<T>(sheet, column, value);
+    }
+
+    async findMany<T>(sheet: string, column: string, value: string): Promise<T[]> {
+        return this.gas.findMany<T>(sheet, column, value);
+    }
     async createSheet(title: string): Promise<any> {
         return await this.auth.sheets.spreadsheets.batchUpdate({
             spreadsheetId: this.spreadsheetId,

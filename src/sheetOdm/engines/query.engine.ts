@@ -1,36 +1,42 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { AggregationPipeline, FilterQuery, IQueryEngine, QueryOptions } from '@sheetOdm/types/query.types';
 import { IQueryStage } from '@sheetOdm/pipelines/stages/IqueryStages';
-import { LookupStage, GroupStage, UnwindStage } from '@sheetOdm/pipelines/stages/Estructura_Compleja';
-import { MatchStage, ProjectStage, AddFieldsStage } from '@sheetOdm/pipelines/stages/filtrado_y_transformacion';
-import { SortStage, LimitStage, SkipStage } from '@sheetOdm/pipelines/stages/orden_y_paginacion';
+import { PIPELINE_STAGE } from '@sheetOdm/pipelines/pipeline.constants';
+import { PipelineOrchestrator } from '@sheetOdm/pipelines/pipeline.registry';
 
 @Injectable()
 export class QueryEngine implements IQueryEngine {
     private readonly stageRegistry: Map<string, IQueryStage>;
 
     constructor(
-        private readonly match: MatchStage,
-        private readonly project: ProjectStage,
-        private readonly lookup: LookupStage,
-        private readonly sort: SortStage,
-        private readonly group: GroupStage,
-        private readonly unwind: UnwindStage,
-        private readonly addFields: AddFieldsStage,
-        private readonly limit: LimitStage,
-        private readonly skip: SkipStage,
+        // Inyectamos el orquestador que ya contiene la lógica de los stages
+        private readonly orchestrator: PipelineOrchestrator,
+        // Opcionalmente inyectamos la colección si la necesitas para validaciones masivas
+        @Inject(PIPELINE_STAGE) private readonly stages: IQueryStage[]
     ) {
-        this.stageRegistry = new Map<string, IQueryStage>([
-            ['$match', this.match],
-            ['$project', this.project],
-            ['$lookup', this.lookup],
-            ['$sort', this.sort],
-            ['$group', this.group],
-            ['$unwind', this.unwind],
-            ['$addFields', this.addFields],
-            ['$limit', this.limit],
-            ['$skip', this.skip]
-        ]);
+        // Mapeo basado en el constructor name de la clase
+        this.stageRegistry = new Map<string, IQueryStage>();
+
+        // Creamos un diccionario de mapeo interno
+        const operatorMap: Record<string, string> = {
+            'MatchStage': '$match',
+            'ProjectStage': '$project',
+            'LookupStage': '$lookup',
+            'SortStage': '$sort',
+            'GroupStage': '$group',
+            'UnwindStage': '$unwind',
+            'AddFieldsStage': '$addFields',
+            'LimitStage': '$limit',
+            'SkipStage': '$skip'
+        };
+
+        this.stages.forEach(stage => {
+            const className = stage.constructor.name;
+            const operator = operatorMap[className];
+            if (operator) {
+                this.stageRegistry.set(operator, stage);
+            }
+        });
     }
 
     public async execute<T>(data: T[], filter: FilterQuery<T>, options?: QueryOptions): Promise<any[]> {

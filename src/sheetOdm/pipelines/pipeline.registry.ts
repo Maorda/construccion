@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger } from "@nestjs/common";
+import { Injectable, Inject, Logger, Optional } from "@nestjs/common";
 import { PIPELINE_STAGE } from './pipeline.constants';
 import { IQueryStage } from "./stages/IqueryStages";
 
@@ -7,11 +7,15 @@ export class PipelineOrchestrator {
     private readonly logger = new Logger(PipelineOrchestrator.name);
     private readonly stagesMap: Map<string, IQueryStage> = new Map();
 
-    constructor(@Inject(PIPELINE_STAGE) private readonly stages: IQueryStage[]) {
+    constructor(@Optional() @Inject(PIPELINE_STAGE) private readonly stages: IQueryStage[]) {
+
+        if (!Array.isArray(this.stages)) {
+            console.error('ERROR CRÍTICO: stages no es un array, es:', typeof this.stages, this.stages);
+        }
         // Mapeo automático inteligente basado en el nombre de la clase
-        this.stages.forEach(stage => {
-            const className = stage.constructor.name;
-            const stageName = className.replace('Stage', '');
+        /* this.stages.forEach(stage => {
+             const className = stage.constructor.name;
+             const stageName = className.replace('Stage', '');
 
             // 🟢 SOLUCIÓN AL BUG: Convierte solo la primera letra a minúscula para soportar camelCase
             // Ejemplo: "AddFieldsStage" -> "AddFields" -> "$addFields"
@@ -21,7 +25,7 @@ export class PipelineOrchestrator {
 
             // Log de depuración para asegurar que los multi-providers se carguen correctamente en tu NPM library
             this.logger.log(`[PipelineOrchestrator] Stage registrado: ${operator} -> ${className}`);
-        });
+        });*/
     }
 
     public async executePipeline(data: any[], pipeline: Record<string, any>[]): Promise<any[]> {

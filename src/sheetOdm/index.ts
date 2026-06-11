@@ -33,5 +33,3 @@ export * from './engines/projection.service';
 
 export * from './engines/mutationEngine';
 
-// 8. Módulo Principal
-export * from './odm-sheet.module';

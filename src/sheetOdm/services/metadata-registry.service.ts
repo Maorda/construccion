@@ -149,4 +149,12 @@ export class MetadataRegistry {
         // Mapea tus columnas de TS a sus nombres físicos en Sheet
         return schema.columnList.map(prop => schema.columns[prop]?.name || prop);
     }
+    getEntityByName(className: string): ClassType<any> | undefined {
+        for (const entity of MetadataRegistry.getAllRegisteredEntities()) {
+            if (entity.name === className) {
+                return entity;
+            }
+        }
+        return undefined;
+    }
 }

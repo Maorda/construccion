@@ -20,6 +20,10 @@ export class DatabaseConfigService implements OnApplicationBootstrap {
     ) { }
 
     async onApplicationBootstrap() {
+        if (process.env.NODE_ENV === 'test') {
+            this.logger.log('--- 🧪 Entorno de test detectado, saltando sincronización ODM ---');
+            return;
+        }
         this.logger.log('🚀 Iniciando sincronización inteligente de infraestructura ODM...');
         await this.syncDatabaseSchema();
     }

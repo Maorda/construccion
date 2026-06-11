@@ -1,9 +1,21 @@
 {
-  "moduleFileExtensions": ["js", "json", "ts"],
-  "rootDir": ".",
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
+  "rootDir": "..",
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
-  }
+  },
+  "moduleNameMapper": {
+    "^@sheetOdm/(.*)$": "<rootDir>/src/sheetOdm/$1",
+    "^src/(.*)$": "<rootDir>/src/$1"
+  },
+  "transformIgnorePatterns": [
+    "/node_modules/(?!uuid|nanoid)",
+    "node_modules/(?!uuid|nanoid)"
+  ]
 }

@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ClassType } from '@sheetOdm/types/query.types';
 import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
 import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
-import { IdGenerator } from '@sheetOdm/utils/id.generator';
+import { IdGenerator } from '@sheetOdm/core/utils/idgenerator';
 
 
 @Injectable()

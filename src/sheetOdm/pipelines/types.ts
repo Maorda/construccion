@@ -1,3 +1,5 @@
+import { ClassType } from "@sheetOdm/types/query.types";
+
 /**
  * Configuración para la etapa de agrupación.
  */
@@ -35,4 +37,21 @@ export interface GroupAccumulator {
     $max?: string | any;
     $count?: Record<string, never>; // Objeto vacío {}
     $push?: string | any;
+}
+
+export interface RelationOptions {
+    // La función que retorna la entidad relacionada (ej: () => User)
+    targetEntity: () => ClassType<any>;
+
+    // El tipo de relación
+    type: 'OneToOne' | 'OneToMany' | 'ManyToOne' | 'ManyToMany';
+
+    // Nombre de la columna que guarda la llave foránea (opcional)
+    joinColumn?: string;
+
+    // El nombre de la propiedad en la entidad contraria (opcional, para relaciones bidireccionales)
+    inverseSide?: string;
+
+    // Si al guardar/borrar esta entidad, la acción se propaga a las relacionadas
+    cascade?: boolean;
 }
