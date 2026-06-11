@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { SHEETS_VERSION_FIELD } from "@sheetOdm/constants/metadata.constants";
+import { SHEETS_VERSION_FIELD } from "@sheetOdm/constants/metadata.constants.js";
 
 export function Version(): PropertyDecorator {
     return (target: any, propertyKey: string | symbol) => {

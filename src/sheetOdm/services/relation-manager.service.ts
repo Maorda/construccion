@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service.js';
 import { ModuleRef } from '@nestjs/core';
-import { SheetsRepository } from '@sheetOdm/repository/sheets.repository';
-import { getRepositoryToken } from '@sheetOdm/utils/helper';
-import { ClassType, PopulateOptions, QueryOptions } from '@sheetOdm/types/query.types';
-import { SheetDocument } from '@sheetOdm/wrapper/sheetDocument';
+import { SheetsRepository } from '@sheetOdm/repository/sheets.repository.js';
+import { getRepositoryToken } from '@sheetOdm/utils/helper.js';
+import { ClassType, PopulateOptions, QueryOptions } from '@sheetOdm/types/query.types.js';
+import { SheetDocument } from '@sheetOdm/wrapper/sheetDocument.js';
 
 @Injectable()
 export class RelationManager {

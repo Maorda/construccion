@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { AggregationPipeline, FilterQuery, IQueryEngine, QueryOptions } from '@sheetOdm/types/query.types';
-import { IQueryStage } from '@sheetOdm/pipelines/stages/IqueryStages';
-import { PIPELINE_STAGE } from '@sheetOdm/pipelines/pipeline.constants';
-import { PipelineOrchestrator } from '@sheetOdm/pipelines/pipeline.registry';
+import { AggregationPipeline, FilterQuery, IQueryEngine, QueryOptions } from '@sheetOdm/types/query.types.js';
+import { IQueryStage } from '@sheetOdm/pipelines/stages/IqueryStages.js';
+import { PIPELINE_STAGE } from '@sheetOdm/pipelines/pipeline.constants.js';
+import { PipelineOrchestrator } from '@sheetOdm/pipelines/pipeline.registry.js';
 
 @Injectable()
 export class QueryEngine implements IQueryEngine {

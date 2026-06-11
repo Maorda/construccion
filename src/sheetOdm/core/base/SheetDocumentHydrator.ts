@@ -1,14 +1,14 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "crypto";
-import { SheetsRepository } from "@sheetOdm/repository/sheets.repository";
-import { MetadataRegistry } from "@sheetOdm/services/metadata-registry.service";
-import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument";
-import { ClassType } from "@sheetOdm/types/query.types";
+import { SheetsRepository } from "@sheetOdm/repository/sheets.repository.js";
+import { MetadataRegistry } from "@sheetOdm/services/metadata-registry.service.js";
+import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument.js";
+import { ClassType } from "@sheetOdm/types/query.types.js";
 import {
     ROW_INDEX_SYMBOL,
     SHEETS_COLUMN_DETAILS
-} from '@sheetOdm/constants/metadata.constants';
-import { SheetDataTransformer } from "./sheetDataTransformer";
+} from '@sheetOdm/constants/metadata.constants.js';
+import { SheetDataTransformer } from "./sheetDataTransformer.js";
 
 export interface HydratorOptions<T extends object, U extends SheetDocument<T>> {
     new?: boolean;
@@ -28,7 +28,6 @@ export class SheetDocumentHydrator {
     private readonly logger = new Logger(SheetDocumentHydrator.name);
 
     constructor(
-        private readonly metadataRegistry: MetadataRegistry,
         private readonly transformer: SheetDataTransformer
     ) { }
 

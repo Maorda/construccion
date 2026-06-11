@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { GoogleDriveConfig } from '@sheetOdm/interfaces/database.options.interface';
+import type { GoogleDriveConfig } from '@sheetOdm/interfaces/database.options.interface.js';
 import { google } from 'googleapis';
 
 @Injectable()

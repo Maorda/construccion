@@ -1,6 +1,6 @@
 import { Injectable, Inject, Logger, Optional } from "@nestjs/common";
-import { PIPELINE_STAGE } from './pipeline.constants';
-import { IQueryStage } from "./stages/IqueryStages";
+import { PIPELINE_STAGE } from './pipeline.constants.js';
+import { IQueryStage } from "./stages/IqueryStages.js";
 
 @Injectable()
 export class PipelineOrchestrator {

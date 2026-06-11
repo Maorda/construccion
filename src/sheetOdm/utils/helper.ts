@@ -1,4 +1,4 @@
-import { ClassType } from "@sheetOdm/types/query.types";
+import { ClassType } from "@sheetOdm/types/query.types.js";
 export const getRepositoryToken = (entity: ClassType) => `${entity.name}Repository`;
 export function deepClone<T>(obj: T): T {
     if (obj === null || obj === undefined) return obj;

@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc';
-import timezone from 'dayjs/plugin/timezone';
-import customParseFormat from 'dayjs/plugin/customParseFormat';
-import weekOfYear from 'dayjs/plugin/weekOfYear';
-import { IExpressionOperator } from "./IExpressionOperator";
-import { DATA_TRANSFORM_OPERATOR, FILTER_OPERATOR } from "./pipeline.constants";
+import utc from 'dayjs/plugin/utc.js';
+import timezone from 'dayjs/plugin/timezone.js';
+import customParseFormat from 'dayjs/plugin/customParseFormat.js';
+import weekOfYear from 'dayjs/plugin/weekOfYear.js';
+import { IExpressionOperator } from "./IExpressionOperator.js";
+import { DATA_TRANSFORM_OPERATOR, FILTER_OPERATOR } from "./pipeline.constants.js";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);

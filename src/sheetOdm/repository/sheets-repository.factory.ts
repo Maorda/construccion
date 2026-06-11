@@ -1,19 +1,19 @@
 import { Injectable, Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
-import { SheetsRepository } from './sheets.repository';
-import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
-import { RelationManager } from '@sheetOdm/services/relation-manager.service';
-import { DataMapper } from '@sheetOdm/services/data-mapper.service';
-import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
-import { UnitOfWork } from '@sheetOdm/services/UnitOfWork';
-import { QueryEngine } from '@sheetOdm/engines/query.engine';
-import { ClassType } from '@sheetOdm/types/query.types';
-import { ValidationEngine } from '@sheetOdm/engines/ValidationEngine';
-import { SheetDataTransformer } from '@sheetOdm/core/base/sheetDataTransformer';
-import { GasService } from '@sheetOdm/core/base/services/gas.service';
-import { WalManagerService } from '@sheetOdm/services/wal-manager.service';
-import { MutationEngine } from '@sheetOdm/engines/mutationEngine';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service.js';
+import { SheetsRepository } from './sheets.repository.js';
+import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway.js';
+import { RelationManager } from '@sheetOdm/services/relation-manager.service.js';
+import { DataMapper } from '@sheetOdm/services/data-mapper.service.js';
+import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator.js';
+import { UnitOfWork } from '@sheetOdm/services/UnitOfWork.js';
+import { QueryEngine } from '@sheetOdm/engines/query.engine.js';
+import { ClassType } from '@sheetOdm/types/query.types.js';
+import { ValidationEngine } from '@sheetOdm/engines/ValidationEngine.js';
+import { SheetDataTransformer } from '@sheetOdm/core/base/sheetDataTransformer.js';
+import { GasService } from '@sheetOdm/core/base/services/gas.service.js';
+import { WalManagerService } from '@sheetOdm/services/wal-manager.service.js';
+import { MutationEngine } from '@sheetOdm/engines/mutationEngine.js';
 
 @Injectable()
 export class SheetsRepositoryFactory {

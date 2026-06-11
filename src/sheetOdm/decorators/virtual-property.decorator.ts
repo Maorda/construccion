@@ -1,6 +1,6 @@
 import 'reflect-metadata';
-import { VirtualOptions } from './interfacesDecorators';
-import { SHEETS_VIRTUALS } from '@sheetOdm/constants/metadata.constants';
+import { VirtualOptions } from './interfacesDecorators.js';
+import { SHEETS_VIRTUALS } from '@sheetOdm/constants/metadata.constants.js';
 export function VirtualProperty(options: VirtualOptions): MethodDecorator {
     return (target: Object, propertyKey: string | symbol) => {
         const classConstructor = target.constructor;

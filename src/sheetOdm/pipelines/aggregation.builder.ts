@@ -1,7 +1,7 @@
 import { Injectable, Scope, BadRequestException } from "@nestjs/common";
-import { GroupConfig, LookupConfig } from "./types";
-import { PipelineStage } from "@sheetOdm/types/query.types";
-import { PipelineOrchestrator } from "./pipeline.registry";
+import { GroupConfig, LookupConfig } from "./types.js";
+import { PipelineStage } from "@sheetOdm/types/query.types.js";
+import { PipelineOrchestrator } from "./pipeline.registry.js";
 
 // 🟢 CRÍTICO: Definimos el Scope como TRANSIENT para que cada inyección 
 // genere un Builder único y evitar contaminación de memoria entre peticiones.

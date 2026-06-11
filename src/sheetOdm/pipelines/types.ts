@@ -1,4 +1,4 @@
-import { ClassType } from "@sheetOdm/types/query.types";
+import { ClassType } from "@sheetOdm/types/query.types.js";
 
 /**
  * Configuración para la etapa de agrupación.

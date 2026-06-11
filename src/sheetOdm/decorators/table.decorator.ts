@@ -1,9 +1,9 @@
 // table.decorator.ts
 import 'reflect-metadata';
-import { TableOptions } from './interfacesDecorators';
-import { ClassType } from '@sheetOdm/types/query.types';
-import { SHEETS_DTO, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants';
-import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
+import { TableOptions } from './interfacesDecorators.js';
+import { ClassType } from '@sheetOdm/types/query.types.js';
+import { SHEETS_DTO, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants.js';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service.js';
 // --- DECORADOR @Table ---
 export function Table(options: TableOptions): ClassDecorator;
 export function Table(name: string, options: TableOptions): ClassDecorator;

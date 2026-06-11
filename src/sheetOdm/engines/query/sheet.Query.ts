@@ -1,6 +1,6 @@
-import { SheetsRepository } from "@sheetOdm/repository/sheets.repository";
-import { FilterQuery, PopulateDefinition, PopulateOptions, QueryOptions, RelationKeys } from "@sheetOdm/types/query.types";
-import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument";
+import { SheetsRepository } from "@sheetOdm/repository/sheets.repository.js";
+import { FilterQuery, PopulateDefinition, PopulateOptions, QueryOptions, RelationKeys } from "@sheetOdm/types/query.types.js";
+import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument.js";
 
 export class SheetQuery<T extends object> {
     // Almacenamos internamente un arreglo estandarizado de opciones

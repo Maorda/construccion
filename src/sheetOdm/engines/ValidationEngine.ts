@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
-import { ClassType } from '@sheetOdm/types/query.types';
-import { ValidationHandleUtil } from '@sheetOdm/utils/validation-handle.util';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service.js';
+import { ClassType } from '@sheetOdm/types/query.types.js';
+import { ValidationHandleUtil } from '@sheetOdm/utils/validation-handle.util.js';
 
 
 @Injectable()

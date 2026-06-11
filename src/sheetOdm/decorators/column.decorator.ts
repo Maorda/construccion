@@ -1,6 +1,6 @@
 import 'reflect-metadata';
-import { SHEETS_COLUMN_DETAILS, SHEETS_COLUMN_LIST, SHEETS_DELETE_CONTROL } from '@sheetOdm/constants/metadata.constants'
-import { ColumnOptions } from './interfacesDecorators';
+import { SHEETS_COLUMN_DETAILS, SHEETS_COLUMN_LIST, SHEETS_DELETE_CONTROL } from '@sheetOdm/constants/metadata.constants.js'
+import { ColumnOptions } from './interfacesDecorators.js';
 export function Column(options: ColumnOptions = {}): PropertyDecorator {
     return (target: object, propertyKey: string | symbol) => {
         const classConstructor = target.constructor;

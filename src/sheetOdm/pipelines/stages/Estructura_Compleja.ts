@@ -1,11 +1,9 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
-import { IQueryStage } from "./IqueryStages";
-import { GroupAccumulator, GroupConfig, LookupConfig } from "../types";
-import { StageUtils } from "./StageUtils";
-import { RelationEngine } from "@sheetOdm/engines/relationEngine";
+import { IQueryStage } from "./IqueryStages.js";
+import { GroupAccumulator } from "../types.js";
 import { ModuleRef } from "@nestjs/core";
-import { MetadataRegistry } from "@sheetOdm/services/metadata-registry.service";
-import { ExpressionEngine } from "../expression.engine";
+import { MetadataRegistry } from "@sheetOdm/services/metadata-registry.service.js";
+import { ExpressionEngine } from "../expression.engine.js";
 
 
 @Injectable()

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { IExpressionOperator } from '../IExpressionOperator';
+import { IExpressionOperator } from '../IExpressionOperator.js';
 
 @Injectable()
 export class EqOperator implements IExpressionOperator {

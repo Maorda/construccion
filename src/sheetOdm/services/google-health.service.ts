@@ -1,9 +1,9 @@
-import { Injectable, Logger, Inject } from '@nestjs/common';
-import { GoogleAutenticarService } from './auth.google.service';
-import type { DatabaseModuleOptions } from '@sheetOdm/interfaces/database.options.interface';
+import { Injectable, Logger, Inject, OnModuleInit } from '@nestjs/common';
+import { GoogleAutenticarService } from './auth.google.service.js';
+import type { DatabaseModuleOptions } from '@sheetOdm/interfaces/database.options.interface.js';
 
 @Injectable()
-export class GoogleHealthService<T extends object> {
+export class GoogleHealthService<T extends object> implements OnModuleInit {
     private readonly logger = new Logger(GoogleHealthService.name);
 
     constructor(
@@ -11,6 +11,10 @@ export class GoogleHealthService<T extends object> {
         // Inyectamos el ID base para probar conectividad general
         @Inject('DATABASE_OPTIONS') protected readonly optionsDatabase: DatabaseModuleOptions,
     ) { }
+    onModuleInit() {
+        console.log("El módulo ha cargado completamente. Iniciando validaciones...");
+        this.checkConnection();
+    }
 
     /**
      * Verifica la salud de la conexión con Google Sheets

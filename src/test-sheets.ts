@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module'; // Importa tu módulo principal real
-import { RelationManager } from './sheetOdm/services/relation-manager.service';
-import { ObreroEntity } from './planilla/entities/ObreroEntity';
+import { AppModule } from './app.module.js'; // Importa tu módulo principal real
+import { RelationManager } from './sheetOdm/services/relation-manager.service.js';
+import { ObreroEntity } from './planilla/entities/ObreroEntity.js';
 
 async function smokeTest() {
     console.log('🚀 Iniciando prueba de humo real...');

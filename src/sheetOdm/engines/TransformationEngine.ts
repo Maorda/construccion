@@ -1,8 +1,8 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
-import { ClassType } from '@sheetOdm/types/query.types';
-import { deepClone } from '@sheetOdm/utils/helper';
-import { ExpressionEngine } from '../pipelines/expression.engine';
-import { ValidationEngine } from './ValidationEngine';
+import { ClassType } from '@sheetOdm/types/query.types.js';
+import { deepClone } from '@sheetOdm/utils/helper.js';
+import { ExpressionEngine } from '../pipelines/expression.engine.js';
+import { ValidationEngine } from './ValidationEngine.js';
 
 
 @Injectable()

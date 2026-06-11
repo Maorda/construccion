@@ -1,10 +1,10 @@
 import { Module } from "@nestjs/common";
 
-import { GoogleAutenticarService } from "@sheetOdm/services/auth.google.service";
-import { OutboxService } from "./OutboxEntry";
-import { PrismaOutboxService } from "./PrismaOutboxService";
-import { PrismaService } from "@sheetOdm/services/prisma.service";
-import { OutboxProcessor } from "./OutboxProcessor";
+import { GoogleAutenticarService } from "@sheetOdm/services/auth.google.service.js";
+import { OutboxService } from "./OutboxEntry.js";
+import { PrismaOutboxService } from "./PrismaOutboxService.js";
+import { PrismaService } from "@sheetOdm/services/prisma.service.js";
+import { OutboxProcessor } from "./OutboxProcessor.js";
 
 
 @Module({

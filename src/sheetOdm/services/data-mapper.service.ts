@@ -1,8 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import { MetadataRegistry } from "./metadata-registry.service";
-import { SheetDataTransformer } from "@sheetOdm/core/base/sheetDataTransformer";
-import { ROW_INDEX_SYMBOL } from "@sheetOdm/constants/metadata.constants";
-import { ClassType } from "@sheetOdm/types/query.types";
+import { MetadataRegistry } from "./metadata-registry.service.js";
+import { SheetDataTransformer } from "@sheetOdm/core/base/sheetDataTransformer.js";
+import { ROW_INDEX_SYMBOL } from "@sheetOdm/constants/metadata.constants.js";
+import { ClassType } from "@sheetOdm/types/query.types.js";
 
 @Injectable()
 export class DataMapper {

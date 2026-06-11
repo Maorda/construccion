@@ -1,6 +1,4 @@
-import { GroupConfig, LookupConfig } from "@sheetOdm/pipelines/types";
-import { SheetsRepository } from "@sheetOdm/repository/sheets.repository";
-import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument";
+import { GroupConfig, LookupConfig } from "@sheetOdm/pipelines/types.js";
 
 export type ClassType<T = any> = new (...args: any[]) => T;
 

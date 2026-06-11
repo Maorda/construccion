@@ -1,9 +1,5 @@
 import { Injectable } from "@nestjs/common";
 import dayjs, { tz } from 'dayjs';
-// Usamos require para evitar el error de compilación de módulos, 
-// pero mantenemos la lógica de tipos de Day.js
-import utc from 'dayjs/plugin/utc';
-import timezone from 'dayjs/plugin/timezone';
 
 
 @Injectable()

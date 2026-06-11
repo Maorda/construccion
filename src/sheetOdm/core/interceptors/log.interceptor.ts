@@ -1,6 +1,6 @@
 // log.interceptor.ts
 import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
-import { CustomLoggerService } from '@sheetOdm/services/logger.service';
+import { CustomLoggerService } from '@sheetOdm/services/logger.service.js';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 

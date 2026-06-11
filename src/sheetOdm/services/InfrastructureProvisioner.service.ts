@@ -1,8 +1,8 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
-import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
-import { SHEETS_DTO, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants';
-import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
-import { ClassType } from '@sheetOdm/types/query.types';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service.js';
+import { SHEETS_DTO, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants.js';
+import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway.js';
+import { ClassType } from '@sheetOdm/types/query.types.js';
 
 @Injectable()
 export class InfrastructureProvisioner implements OnApplicationBootstrap {

@@ -1,9 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { GasService } from '@sheetOdm/core/base/services/gas.service';
+import { GasService } from '@sheetOdm/core/base/services/gas.service.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
-import { MetadataRegistry } from './metadata-registry.service';
+import { MetadataRegistry } from './metadata-registry.service.js';
 // Asumo la existencia de tu servicio GAS inyectable
 
 

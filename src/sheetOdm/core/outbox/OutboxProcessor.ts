@@ -1,10 +1,10 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { getRepositoryToken } from '@sheetOdm/utils/helper';
-import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
-import { OutboxStatus } from '@sheetOdm/core/outbox/OutboxEntry';
-import { PrismaService } from '@sheetOdm/services/prisma.service';
-import { DatabaseModuleOptions } from '@sheetOdm/interfaces/database.options.interface';
+import { getRepositoryToken } from '@sheetOdm/utils/helper.js';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service.js';
+import { OutboxStatus } from '@sheetOdm/core/outbox/OutboxEntry.js';
+import { PrismaService } from '@sheetOdm/services/prisma.service.js';
+import type { DatabaseModuleOptions } from '@sheetOdm/interfaces/database.options.interface.js';
 
 @Injectable()
 export class OutboxProcessor implements OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy {

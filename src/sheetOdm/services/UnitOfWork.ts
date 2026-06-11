@@ -1,10 +1,8 @@
 import { Injectable, Scope, Logger } from '@nestjs/common';
-import { ClassType } from '@sheetOdm/types/query.types';
-import { SheetDocument } from '@sheetOdm/wrapper/sheetDocument';
-import { ModuleRef } from '@nestjs/core';
-import { getRepositoryToken } from '@sheetOdm/utils/helper';
-import { OutboxEntry, OutboxService, OutboxStatus, TypeOp } from '@sheetOdm/core/outbox/OutboxEntry';
-import { IdFactory } from '@sheetOdm/utils/id.generator';
+import { ClassType } from '@sheetOdm/types/query.types.js';
+import { SheetDocument } from '@sheetOdm/wrapper/sheetDocument.js';
+import { OutboxEntry, OutboxService, OutboxStatus, TypeOp } from '@sheetOdm/core/outbox/OutboxEntry.js';
+import { IdFactory } from '@sheetOdm/utils/id.generator.js';
 
 export interface PendingOperation {
     type: 'INSERT' | 'UPDATE' | 'DELETE';

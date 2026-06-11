@@ -1,8 +1,8 @@
 import 'reflect-metadata';
-import { ClassType } from '@sheetOdm/types/query.types';
-import { ReferenceOptions } from './interfacesDecorators';
-import { SHEETS_ALL_RELATIONS, SHEETS_RELATIONS_LIST } from '@sheetOdm/constants/metadata.constants';
-import { Column } from './column.decorator';
+import { ClassType } from '@sheetOdm/types/query.types.js';
+import { ReferenceOptions } from './interfacesDecorators.js';
+import { SHEETS_ALL_RELATIONS, SHEETS_RELATIONS_LIST } from '@sheetOdm/constants/metadata.constants.js';
+import { Column } from './column.decorator.js';
 export function Reference(targetEntity: (() => ClassType<any>) | ClassType<any>, options: ReferenceOptions): PropertyDecorator {
     return (target: object, propertyKey: string | symbol) => {
         const classConstructor = target.constructor;

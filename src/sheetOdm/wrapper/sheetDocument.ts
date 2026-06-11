@@ -1,6 +1,6 @@
-import { ROW_INDEX_SYMBOL, SHEETS_VIRTUALS } from "@sheetOdm/constants/metadata.constants";
-import { SheetsRepository } from "@sheetOdm/repository/sheets.repository";
-import { ClassType } from "@sheetOdm/types/query.types";
+import { ROW_INDEX_SYMBOL, SHEETS_VIRTUALS } from "@sheetOdm/constants/metadata.constants.js";
+import { SheetsRepository } from "@sheetOdm/repository/sheets.repository.js";
+import { ClassType } from "@sheetOdm/types/query.types.js";
 
 export abstract class SheetDocument<T extends object> {
     protected _data: Partial<T>;

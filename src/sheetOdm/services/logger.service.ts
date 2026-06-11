@@ -1,6 +1,6 @@
 // logger.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import { ErrorCode, ErrorDictionary, LogLevel } from '@sheetOdm/core/interfaces/logger.types';
+import { ErrorCode, ErrorDictionary, LogLevel } from '@sheetOdm/core/interfaces/logger.types.js';
 
 export interface FrontendLog {
     timestamp: string;

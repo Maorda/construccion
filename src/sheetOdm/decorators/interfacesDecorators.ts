@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { ClassType } from '@sheetOdm/types/query.types';
+import { ClassType } from '@sheetOdm/types/query.types.js';
 
 // Interfaces de configuración de decoradores
 export interface ColumnOptions {

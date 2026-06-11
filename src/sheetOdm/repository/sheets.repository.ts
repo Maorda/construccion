@@ -1,23 +1,23 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
-import { ClassType, FilterQuery, FindOneAndUpdateOptions, PopulateOptions, QueryOptions, UpdateQuery } from '@sheetOdm/types/query.types';
-import { ROW_INDEX_SYMBOL, SHEETS_REPOSITORY_MARKER, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants';
-import * as Joi from 'joi';
-import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
-import { DataMapper } from '@sheetOdm/services/data-mapper.service';
-import { RelationManager } from '@sheetOdm/services/relation-manager.service';
-import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service.js';
+import { FilterQuery, FindOneAndUpdateOptions, PopulateOptions, QueryOptions, UpdateQuery } from '@sheetOdm/types/query.types.js';
+import type { ClassType } from '@sheetOdm/types/query.types.js';
+import { ROW_INDEX_SYMBOL, SHEETS_REPOSITORY_MARKER, SHEETS_TABLE_NAME } from '@sheetOdm/constants/metadata.constants.js';
+import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway.js';
+import { DataMapper } from '@sheetOdm/services/data-mapper.service.js';
+import { RelationManager } from '@sheetOdm/services/relation-manager.service.js';
+import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator.js';
 import { ModuleRef } from '@nestjs/core';
-import { getRepositoryToken } from '@sheetOdm/utils/helper';
-import { SheetDocument } from '@sheetOdm/wrapper/sheetDocument';
-import { UnitOfWork } from '@sheetOdm/services/UnitOfWork';
-import { QueryEngine } from '@sheetOdm/engines/query.engine';
-import { SheetDataTransformer } from '@sheetOdm/core/base/sheetDataTransformer';
-import { ValidationEngine } from '@sheetOdm/engines/ValidationEngine';
-import { MutationEngine } from '@sheetOdm/engines/mutationEngine';
-import { WalManagerService } from '@sheetOdm/services/wal-manager.service';
-import { IdGenerator } from '@sheetOdm/core/utils/idgenerator';
-import { GasService } from '@sheetOdm/core/base/services/gas.service';
+import { getRepositoryToken } from '@sheetOdm/utils/helper.js';
+import { SheetDocument } from '@sheetOdm/wrapper/sheetDocument.js';
+import { UnitOfWork } from '@sheetOdm/services/UnitOfWork.js';
+import { QueryEngine } from '@sheetOdm/engines/query.engine.js';
+import { SheetDataTransformer } from '@sheetOdm/core/base/sheetDataTransformer.js';
+import { ValidationEngine } from '@sheetOdm/engines/ValidationEngine.js';
+import { MutationEngine } from '@sheetOdm/engines/mutationEngine.js';
+import { WalManagerService } from '@sheetOdm/services/wal-manager.service.js';
+import { IdGenerator } from '@sheetOdm/core/utils/idgenerator.js';
+import { GasService } from '@sheetOdm/core/base/services/gas.service.js';
 
 
 // Registro global auxiliar para resolver inyecciones circulares entre repositorios en populate
@@ -376,19 +376,7 @@ export class SheetsRepository<T extends object> {
         return item ? (item[ROW_INDEX_SYMBOL] ?? -1) : -1;
     }
 
-    // =========================================================================
-    // API PÚBLICA DE ESCRITURA (ESTILO MONGOOSE)
-    // =========================================================================
-
-
-
-
-
-    // =========================================================================
-    // UTILIDADES PÚBLICAS Y CACHÉ
-    // =========================================================================
-
-    async populate(entity: T, relationField: string): Promise<T> {
+    async populate(entity: SheetDocument<T>, relationField: string): Promise<SheetDocument<T>> {
         const options: PopulateOptions<T> = {
             path: relationField as any
         };

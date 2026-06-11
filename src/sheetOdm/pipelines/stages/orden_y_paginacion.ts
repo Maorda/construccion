@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { IQueryStage } from "./IqueryStages";
-import { StageUtils } from "./StageUtils";
+import { IQueryStage } from "./IqueryStages.js";
+import { StageUtils } from "./StageUtils.js";
 
 
 @Injectable()

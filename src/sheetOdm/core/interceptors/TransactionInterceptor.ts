@@ -5,7 +5,7 @@ import {
   CallHandler,
   Scope
 } from '@nestjs/common';
-import { UnitOfWork } from '@sheetOdm/services/UnitOfWork';
+import { UnitOfWork } from '@sheetOdm/services/UnitOfWork.js';
 import { Observable, catchError, tap, throwError } from 'rxjs';
 
 // ⚠️ IMPORTANTE: Debe ser REQUEST scope para obtener la instancia correcta del UOW

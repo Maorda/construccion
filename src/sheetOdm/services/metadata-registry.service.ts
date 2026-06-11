@@ -10,9 +10,9 @@ import {
     SHEETS_TABLE_NAME,
     SHEETS_VERSION_FIELD,
     SHEETS_VIRTUALS
-} from '@sheetOdm/constants/metadata.constants';
-import { ColumnOptions } from '@sheetOdm/decorators/interfacesDecorators';
-import { ClassType } from '@sheetOdm/types/query.types';
+} from '@sheetOdm/constants/metadata.constants.js';
+import { ColumnOptions } from '@sheetOdm/decorators/interfacesDecorators.js';
+import { ClassType } from '@sheetOdm/types/query.types.js';
 
 export interface EntitySchema {
     sheetName: string;

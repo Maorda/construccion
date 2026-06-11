@@ -1,4 +1,4 @@
-import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument";
+import { SheetDocument } from "@sheetOdm/wrapper/sheetDocument.js";
 
 export enum OutboxStatus {
     PENDING = 'PENDING',

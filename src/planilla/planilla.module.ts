@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
-import { CategoriaEntity } from './entities/CategoriaEntity';
-import { DetallePlanillaEntity } from './entities/DetallePlanillaEntity';
-import { ObreroEntity } from './entities/ObreroEntity';
-import { PlanillaAdminController } from './controllers/PlanillaAdminController';
-import { TareoRelojController } from './controllers/TareoRelojController';
-import { PlanillaTareoService } from './services/PlanillaTareoService';
-import { AsistenciaDiariaEntity } from './entities/AsistenciaDiariaEntity';
-import { AdelantoEntity } from './entities/AdelantoEntity';
-import { OdmSheetModule } from '@sheetOdm/odm-sheet.module';
-import { ObrerosController } from './controllers/liquidacion.controller';
+import { CategoriaEntity } from './entities/CategoriaEntity.js';
+import { DetallePlanillaEntity } from './entities/DetallePlanillaEntity.js';
+import { ObreroEntity } from './entities/ObreroEntity.js';
+import { PlanillaAdminController } from './controllers/PlanillaAdminController.js';
+import { TareoRelojController } from './controllers/TareoRelojController.js';
+import { PlanillaTareoService } from './services/PlanillaTareoService.js';
+import { AsistenciaDiariaEntity } from './entities/AsistenciaDiariaEntity.js';
+import { AdelantoEntity } from './entities/AdelantoEntity.js';
+import { OdmSheetModule } from '@sheetOdm/odm-sheet.module.js';
+import { ObrerosController } from './controllers/liquidacion.controller.js';
 
 @Module({
   imports: [

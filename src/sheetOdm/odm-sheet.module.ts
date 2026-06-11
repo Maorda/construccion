@@ -4,50 +4,50 @@ import { HttpModule } from '@nestjs/axios';
 import { CacheModule, CacheInterceptor } from '@nestjs/cache-manager';
 
 // Servicios de Infraestructura y Configuración
-import { GoogleAutenticarService } from '@sheetOdm/services/auth.google.service';
-import { GoogleHealthService } from '@sheetOdm/services/google-health.service';
-import { DatabaseConfigService } from '@sheetOdm/services/database-config.service';
-import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
-import { NamingStrategy } from '@sheetOdm/strategy/naming.strategy';
-import { InfrastructureProvisioner } from '@sheetOdm/services/InfrastructureProvisioner.service';
-import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
-import { UnitOfWork } from '@sheetOdm/services/UnitOfWork';
+import { GoogleAutenticarService } from '@sheetOdm/services/auth.google.service.js';
+import { GoogleHealthService } from '@sheetOdm/services/google-health.service.js';
+import { DatabaseConfigService } from '@sheetOdm/services/database-config.service.js';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service.js';
+import { NamingStrategy } from '@sheetOdm/strategy/naming.strategy.js';
+import { InfrastructureProvisioner } from '@sheetOdm/services/InfrastructureProvisioner.service.js';
+import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway.js';
+import { UnitOfWork } from '@sheetOdm/services/UnitOfWork.js';
 
 // Motores de Datos, Hidratación y Relaciones
-import { SheetsRepositoryFactory } from '@sheetOdm/repository/sheets-repository.factory';
-import { ProjectionService } from '@sheetOdm/engines/projection.service';
+import { SheetsRepositoryFactory } from '@sheetOdm/repository/sheets-repository.factory.js';
+import { ProjectionService } from '@sheetOdm/engines/projection.service.js';
 
-import { RelationManager } from '@sheetOdm/services/relation-manager.service';
-import { DataMapper } from '@sheetOdm/services/data-mapper.service';
-import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator';
+import { RelationManager } from '@sheetOdm/services/relation-manager.service.js';
+import { DataMapper } from '@sheetOdm/services/data-mapper.service.js';
+import { SheetDocumentHydrator } from '@sheetOdm/core/base/SheetDocumentHydrator.js';
 
-import { TransformationEngine } from '@sheetOdm/engines/TransformationEngine';
-import { ValidationEngine } from '@sheetOdm/engines/ValidationEngine';
+import { TransformationEngine } from '@sheetOdm/engines/TransformationEngine.js';
+import { ValidationEngine } from '@sheetOdm/engines/ValidationEngine.js';
 
-import { QueryEngine } from '@sheetOdm/engines/query.engine';
-import { ExpressionEngine } from '@sheetOdm/pipelines/expression.engine';
+import { QueryEngine } from '@sheetOdm/engines/query.engine.js';
+import { ExpressionEngine } from '@sheetOdm/pipelines/expression.engine.js';
 
 // Pipeline Stages (Agregaciones)
-import { PipelineOrchestrator } from '@sheetOdm/pipelines/pipeline.registry';
-import { AddFieldsStage, MatchStage, ProjectStage } from '@sheetOdm/pipelines/stages/filtrado_y_transformacion';
-import { GroupStage, LookupStage, UnwindStage } from '@sheetOdm/pipelines/stages/Estructura_Compleja';
-import { LimitStage, SkipStage, SortStage } from '@sheetOdm/pipelines/stages/orden_y_paginacion';
+import { PipelineOrchestrator } from '@sheetOdm/pipelines/pipeline.registry.js';
+import { AddFieldsStage, MatchStage, ProjectStage } from '@sheetOdm/pipelines/stages/filtrado_y_transformacion.js';
+import { GroupStage, LookupStage, UnwindStage } from '@sheetOdm/pipelines/stages/Estructura_Compleja.js';
+import { LimitStage, SkipStage, SortStage } from '@sheetOdm/pipelines/stages/orden_y_paginacion.js';
 
 // Tipos e Interfaces
-import { ClassType } from '@sheetOdm/types/query.types';
-import { DatabaseModuleOptions, DatabaseModuleAsyncOptions, GoogleDriveConfig } from '@sheetOdm/interfaces/database.options.interface';
-import { createModel } from '@sheetOdm/repository/create-model';
-import { AggregationBuilder } from './pipelines/aggregation.builder';
-import { DATA_TRANSFORM_OPERATOR, FILTER_OPERATOR, PIPELINE_STAGE } from './pipelines/pipeline.constants';
-import { EqOperator, NeOperator, GtOperator, GteOperator, LtOperator, LteOperator, InOperator, NinOperator, ExistsOperator, RegexOperator } from './pipelines/operadores/filter.operators';
-import { IfOperator, MultiplyOperator, IncOperator, MinMaxOperator, RoundOperator, MathOperator, UpperOperator, TrimOperator, ConcatOperator, DateAddOperator, TimeDiffOperator, AggregateOperator } from './pipelines/operadores/transform.operators';
-import { GasService } from './core/base/services/gas.service';
-import { TransactionInterceptor } from './core/interceptors/TransactionInterceptor';
+import { ClassType } from '@sheetOdm/types/query.types.js';
+import { DatabaseModuleOptions, DatabaseModuleAsyncOptions, GoogleDriveConfig } from '@sheetOdm/interfaces/database.options.interface.js';
+import { createModel } from '@sheetOdm/repository/create-model.js';
+import { AggregationBuilder } from './pipelines/aggregation.builder.js';
+import { DATA_TRANSFORM_OPERATOR, FILTER_OPERATOR, PIPELINE_STAGE } from './pipelines/pipeline.constants.js';
+import { EqOperator, NeOperator, GtOperator, GteOperator, LtOperator, LteOperator, InOperator, NinOperator, ExistsOperator, RegexOperator } from './pipelines/operadores/filter.operators.js';
+import { IfOperator, MultiplyOperator, IncOperator, MinMaxOperator, RoundOperator, MathOperator, UpperOperator, TrimOperator, ConcatOperator, DateAddOperator, TimeDiffOperator, AggregateOperator } from './pipelines/operadores/transform.operators.js';
+import { GasService } from './core/base/services/gas.service.js';
+import { TransactionInterceptor } from './core/interceptors/TransactionInterceptor.js';
 
-import { OutboxModule } from './core/outbox/outbox.module';
-import { SheetDataTransformer } from './core/base/sheetDataTransformer';
-import { MutationEngine } from './engines/mutationEngine';
-import { WalManagerService } from './services/wal-manager.service';
+import { OutboxModule } from './core/outbox/outbox.module.js';
+import { SheetDataTransformer } from './core/base/sheetDataTransformer.js';
+import { MutationEngine } from './engines/mutationEngine.js';
+import { WalManagerService } from './services/wal-manager.service.js';
 
 // =========================================================================
 // UTILIDADES DE TOKENS (Exportar de manera pública en tu librería)
@@ -62,6 +62,24 @@ export const InjectModel = (entity: ClassType) => Inject(getModelToken(entity));
 export const InjectRepository = (entity: ClassType) => Inject(getRepositoryToken(entity));
 
 // =========================================================================
+// 1. AGRUPACIÓN DE CLASES POR CATEGORÍA
+// =========================================================================
+const FILTERS = [
+    EqOperator, NeOperator, GtOperator, GteOperator, LtOperator, LteOperator,
+    InOperator, NinOperator, ExistsOperator, RegexOperator
+];
+
+const TRANSFORMS = [
+    IfOperator, MultiplyOperator, IncOperator, MinMaxOperator, RoundOperator,
+    MathOperator, UpperOperator, TrimOperator, ConcatOperator, DateAddOperator,
+    TimeDiffOperator, AggregateOperator
+];
+
+const STAGES = [
+    MatchStage, SortStage, AddFieldsStage, GroupStage, LimitStage,
+    LookupStage, ProjectStage, SkipStage, UnwindStage
+];
+// =========================================================================
 // LISTA DE PROVEEDORES DEL CORE LOGICIAL
 // =========================================================================
 const CORE_PROVIDERS: Provider[] = [
@@ -70,47 +88,30 @@ const CORE_PROVIDERS: Provider[] = [
     AggregationBuilder,
     PipelineOrchestrator,
     ExpressionEngine,
-
     TransactionInterceptor,
 
-    // 🟢 REFACTORIZACIÓN MULTI-PROVIDER STAGES:
-    // Conectamos cada clase al token PIPELINE_STAGE que el orquestador exige vía @Inject
-    // 2. Operadores de Filtro (Multi-Provider)
-    { provide: FILTER_OPERATOR, useClass: EqOperator, multi: true } as any,
-    { provide: FILTER_OPERATOR, useClass: NeOperator, multi: true } as any,
-    { provide: FILTER_OPERATOR, useClass: GtOperator, multi: true } as any,
-    { provide: FILTER_OPERATOR, useClass: GteOperator, multi: true } as any,
-    { provide: FILTER_OPERATOR, useClass: LtOperator, multi: true } as any,
-    { provide: FILTER_OPERATOR, useClass: LteOperator, multi: true } as any,
-    { provide: FILTER_OPERATOR, useClass: InOperator, multi: true } as any,
-    { provide: FILTER_OPERATOR, useClass: NinOperator, multi: true } as any,
-    { provide: FILTER_OPERATOR, useClass: ExistsOperator, multi: true } as any,
-    { provide: FILTER_OPERATOR, useClass: RegexOperator, multi: true } as any,
+    // 🟢 2. REGISTRO INDIVIDUAL: NestJS necesita instanciar cada clase individualmente primero
+    ...FILTERS,
+    ...TRANSFORMS,
+    ...STAGES,
 
-    // 3. Operadores de Transformación (Multi-Provider)
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: IfOperator, multi: true } as any,
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: MultiplyOperator, multi: true } as any,
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: IncOperator, multi: true } as any,
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: MinMaxOperator, multi: true } as any,
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: RoundOperator, multi: true } as any,
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: MathOperator, multi: true } as any,
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: UpperOperator, multi: true } as any,
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: TrimOperator, multi: true } as any,
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: ConcatOperator, multi: true } as any,
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: DateAddOperator, multi: true } as any,
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: TimeDiffOperator, multi: true } as any,
-    { provide: DATA_TRANSFORM_OPERATOR, useClass: AggregateOperator, multi: true } as any,
-
-    // 4. Pipeline Stages (Multi-Provider)
-    { provide: PIPELINE_STAGE, useClass: MatchStage, multi: true } as any,
-    { provide: PIPELINE_STAGE, useClass: SortStage, multi: true } as any,
-    { provide: PIPELINE_STAGE, useClass: AddFieldsStage, multi: true } as any,
-    { provide: PIPELINE_STAGE, useClass: GroupStage, multi: true } as any,
-    { provide: PIPELINE_STAGE, useClass: LimitStage, multi: true } as any,
-    { provide: PIPELINE_STAGE, useClass: LookupStage, multi: true } as any,
-    { provide: PIPELINE_STAGE, useClass: ProjectStage, multi: true } as any,
-    { provide: PIPELINE_STAGE, useClass: SkipStage, multi: true } as any,
-    { provide: PIPELINE_STAGE, useClass: UnwindStage, multi: true } as any,
+    // 🟢 3. FACTORIES (El reemplazo de multi: true):
+    // Agrupamos las instancias individuales en un Array bajo sus respectivos tokens
+    {
+        provide: FILTER_OPERATOR,
+        useFactory: (...filters: any[]) => filters,
+        inject: FILTERS,
+    },
+    {
+        provide: DATA_TRANSFORM_OPERATOR,
+        useFactory: (...transforms: any[]) => transforms,
+        inject: TRANSFORMS,
+    },
+    {
+        provide: PIPELINE_STAGE,
+        useFactory: (...stages: any[]) => stages,
+        inject: STAGES,
+    },
 
     GoogleAutenticarService,
     GoogleHealthService,
@@ -120,7 +121,7 @@ const CORE_PROVIDERS: Provider[] = [
     SheetsRepositoryFactory,
     ProjectionService,
     QueryEngine,
-    ExpressionEngine,
+    // ExpressionEngine, <-- ⚠️ Nota: Lo tenías duplicado en tu código original, ya está arriba
     InfrastructureProvisioner,
     SheetDataGateway,
     RelationManager,
@@ -132,8 +133,6 @@ const CORE_PROVIDERS: Provider[] = [
     SheetDataTransformer,
     MutationEngine,
     WalManagerService
-
-    //HydrationEngine,
 ];
 
 @Global()

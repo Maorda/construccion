@@ -1,14 +1,14 @@
 import { Logger, Module, OnApplicationBootstrap } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { AppController } from './app.controller.js';
+import { AppService } from './app.service.js';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { envValidationSchema } from '../env.validation';
-import { OdmSheetModule } from '@sheetOdm/odm-sheet.module';
-import { CONNECTION_STABILITY } from '@sheetOdm/interfaces/database.options.interface';
-import { PlanillaModule } from './planilla/planilla.module';
+import { envValidationSchema } from '../env.validation.js';
+import { OdmSheetModule } from '@sheetOdm/odm-sheet.module.js';
+import { CONNECTION_STABILITY } from '@sheetOdm/interfaces/database.options.interface.js';
+import { PlanillaModule } from './planilla/planilla.module.js';
 import { ModuleRef } from '@nestjs/core';
-import { InfrastructureProvisioner } from '@sheetOdm/services/InfrastructureProvisioner.service';
-import { configLoader } from '../configLoader';
+import { InfrastructureProvisioner } from '@sheetOdm/services/InfrastructureProvisioner.service.js';
+import { configLoader } from '../configLoader.js';
 @Module({
   imports: [
     ConfigModule.forRoot({

@@ -1,10 +1,10 @@
 // src/config/database-config.service.ts
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
-import { SHEETS_DTO, SHEETS_REPOSITORY_MARKER } from '@sheetOdm/constants/metadata.constants';
-import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway';
-import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
-import { ClassType } from '@sheetOdm/types/query.types';
+import { SHEETS_DTO, SHEETS_REPOSITORY_MARKER } from '@sheetOdm/constants/metadata.constants.js';
+import { SheetDataGateway } from '@sheetOdm/gateway/sheetDataGateway.js';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service.js';
+import { ClassType } from '@sheetOdm/types/query.types.js';
 import * as crypto from 'crypto';
 
 const SYSTEM_SHEET_NAME = '_ODM_SYSTEM_METADATA_';

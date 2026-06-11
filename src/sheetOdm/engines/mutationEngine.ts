@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { UpdateQuery } from '@sheetOdm/types/query.types';
+import { UpdateQuery } from '@sheetOdm/types/query.types.js';
 
 @Injectable()
 export class MutationEngine {

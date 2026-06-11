@@ -1,11 +1,11 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
+import { AppModule } from './app.module.js';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { useContainer } from 'class-validator';
-import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
-import { GoogleHealthService } from '@sheetOdm/services/google-health.service';
-import { GasTelemetryInterceptor } from '@sheetOdm/core/interceptors/gas-telemetry.interceptor';
+import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface.js';
+import { GoogleHealthService } from '@sheetOdm/services/google-health.service.js';
+import { GasTelemetryInterceptor } from '@sheetOdm/core/interceptors/gas-telemetry.interceptor.js';
 // Asegúrate de que la ruta de importación coincida con tu estructura
 
 

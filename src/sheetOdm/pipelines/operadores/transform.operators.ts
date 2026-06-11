@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import dayjs from 'dayjs';
-import { IExpressionOperator } from '../IExpressionOperator';
+import { IExpressionOperator } from '../IExpressionOperator.js';
 
 // =========================================================================
 // 1. OPERADORES LÓGICOS Y DE FLUJO

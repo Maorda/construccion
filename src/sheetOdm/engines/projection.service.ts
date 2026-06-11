@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ClassType, Projection } from '@sheetOdm/types/query.types';
-import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
-import { SHEETS_VIRTUAL_COLUMNS, SHEETS_VIRTUALS } from '@sheetOdm/constants/metadata.constants';
+import { ClassType, Projection } from '@sheetOdm/types/query.types.js';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service.js';
+
 
 @Injectable()
 export class ProjectionService {

@@ -1,4 +1,4 @@
-import { SHEETS_HOOKS } from "@sheetOdm/constants/metadata.constants";
+import { SHEETS_HOOKS } from "@sheetOdm/constants/metadata.constants.js";
 
 
 export function PreSave(): MethodDecorator {

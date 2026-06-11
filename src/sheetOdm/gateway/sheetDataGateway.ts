@@ -1,9 +1,9 @@
 // sheet-data.gateway.ts
 import { Injectable, Logger, Inject } from '@nestjs/common';
-import { GasService } from '@sheetOdm/core/base/services/gas.service';
-import { GoogleAutenticarService } from '@sheetOdm/services/auth.google.service';
-import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service';
-import { ClassType, ISheetDriver } from '@sheetOdm/types/query.types';
+import { GasService } from '@sheetOdm/core/base/services/gas.service.js';
+import { GoogleAutenticarService } from '@sheetOdm/services/auth.google.service.js';
+import { MetadataRegistry } from '@sheetOdm/services/metadata-registry.service.js';
+import { ClassType, ISheetDriver } from '@sheetOdm/types/query.types.js';
 
 
 @Injectable()

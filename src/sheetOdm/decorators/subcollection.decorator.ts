@@ -1,7 +1,7 @@
 import 'reflect-metadata';
-import { ClassType } from '@sheetOdm/types/query.types';
-import { SubCollectionOptions } from './interfacesDecorators';
-import { SHEETS_ALL_RELATIONS, SHEETS_RELATIONS_LIST } from '@sheetOdm/constants/metadata.constants';
+import { ClassType } from '@sheetOdm/types/query.types.js';
+import { SubCollectionOptions } from './interfacesDecorators.js';
+import { SHEETS_ALL_RELATIONS, SHEETS_RELATIONS_LIST } from '@sheetOdm/constants/metadata.constants.js';
 export function SubCollection(arg: (() => ClassType<any>) | ClassType<any>, options?: SubCollectionOptions): PropertyDecorator {
     return (target: object, propertyKey: string | symbol) => {
         const propertyName = propertyKey.toString();

@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { OutboxEntry, OutboxService } from "@sheetOdm/core/outbox/OutboxEntry";
-import { PrismaService } from "@sheetOdm/services/prisma.service";
+import { OutboxEntry, OutboxService } from "@sheetOdm/core/outbox/OutboxEntry.js";
+import { PrismaService } from "@sheetOdm/services/prisma.service.js";
 
 
 @Injectable()
